@@ -21,4 +21,4 @@ jobs:
       build-environment: linux-noble-riscv64-py3.12-gcc14
       docker-image-name: pytorch-linux-noble-riscv64-py3.12-gcc14
       runner: ubuntu-latest
-    secrets: inherit
+    # secrets: inherit
