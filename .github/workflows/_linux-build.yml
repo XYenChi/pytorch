@@ -159,11 +159,11 @@ jobs:
         uses: ./.github/actions/setup-linux
         if: inputs.build-environment != 'linux-s390x-binary-manywheel'
 
-      - name: Login to ECR
-        if: inputs.build-environment != 'linux-s390x-binary-manywheel'
-        uses: ./.github/actions/ecr-login
-        with:
-          aws-role-to-assume: ${{ inputs.aws-role-to-assume }}
+      # - name: Login to ECR
+      #   if: inputs.build-environment != 'linux-s390x-binary-manywheel'
+      #   uses: ./.github/actions/ecr-login
+      #   with:
+      #     aws-role-to-assume: ${{ inputs.aws-role-to-assume }}
 
       - name: Get workflow job id
         id: get-job-id
