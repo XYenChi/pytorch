@@ -183,28 +183,32 @@ jobs:
           job-id: ${{ steps.get-job-id.outputs.job-id }}
           job-name: ${{ steps.get-job-id.outputs.job-name }}
 
-      - name: Calculate docker image
-        id: calculate-docker-image
-        uses: pytorch/test-infra/.github/actions/calculate-docker-image@main
-        if: inputs.build-environment != 'linux-s390x-binary-manywheel'
-        with:
-          docker-image-name: ${{ inputs.docker-image-name }}
+      - name: Pull RISC-V docker image
+        run : |
+         docker pull --platform=linux/amd64/v3 ubuntu:24.04
 
-      - name: Use following to pull public copy of the image
-        id: print-ghcr-mirror
-        if: inputs.build-environment != 'linux-s390x-binary-manywheel' && steps.use-old-whl.outputs.reuse != 'true'
-        env:
-          ECR_DOCKER_IMAGE: ${{ steps.calculate-docker-image.outputs.docker-image }}
-        shell: bash
-        run: |
-          tag=${ECR_DOCKER_IMAGE##*:}
-          echo "docker pull ghcr.io/pytorch/ci-image:${tag/:/-}"
+      # - name: Calculate docker image
+      #   id: calculate-docker-image
+      #   uses: pytorch/test-infra/.github/actions/calculate-docker-image@main
+      #   if: inputs.build-environment != 'linux-s390x-binary-manywheel'
+      #   with:
+      #     docker-image-name: ${{ inputs.docker-image-name }}
 
-      - name: Pull docker image
-        uses: pytorch/test-infra/.github/actions/pull-docker-image@main
-        if: inputs.build-environment != 'linux-s390x-binary-manywheel' && steps.use-old-whl.outputs.reuse != 'true'
-        with:
-          docker-image: ${{ steps.calculate-docker-image.outputs.docker-image }}
+      # - name: Use following to pull public copy of the image
+      #   id: print-ghcr-mirror
+      #   if: inputs.build-environment != 'linux-s390x-binary-manywheel' && steps.use-old-whl.outputs.reuse != 'true'
+      #   env:
+      #     ECR_DOCKER_IMAGE: ${{ steps.calculate-docker-image.outputs.docker-image }}
+      #   shell: bash
+      #   run: |
+      #     tag=${ECR_DOCKER_IMAGE##*:}
+      #     echo "docker pull ghcr.io/pytorch/ci-image:${tag/:/-}"
+
+      # - name: Pull docker image
+      #   uses: pytorch/test-infra/.github/actions/pull-docker-image@main
+      #   if: inputs.build-environment != 'linux-s390x-binary-manywheel' && steps.use-old-whl.outputs.reuse != 'true'
+      #   with:
+      #     docker-image: ${{ steps.calculate-docker-image.outputs.docker-image }}
 
       - name: Parse ref
         id: parse-ref
@@ -264,7 +268,7 @@ jobs:
           XLA_CLANG_CACHE_S3_BUCKET_NAME: ossci-compiler-clang-cache-circleci-xla
           PR_LABELS: ${{ toJson(github.event.pull_request.labels.*.name) }}
           TORCH_CUDA_ARCH_LIST: ${{ inputs.cuda-arch-list }}
-          DOCKER_IMAGE: ${{ steps.calculate-docker-image.outputs.docker-image }}
+          DOCKER_IMAGE: ubuntu:24.04
           DOCKER_IMAGE_S390X: ${{ inputs.docker-image-name }}
           XLA_CUDA: ${{ contains(inputs.build-environment, 'xla') && '0' || '' }}
           OUR_GITHUB_JOB_ID: ${{ steps.get-job-id.outputs.job-id }}
