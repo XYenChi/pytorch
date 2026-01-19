@@ -245,14 +245,14 @@ jobs:
           > "../../usage_logs/usage_log_build_${JOB_ID}.txt" 2>&1 &
           echo "monitor-script-pid=${!}" >> "${GITHUB_OUTPUT}"
 
-      - name: Download pytest cache
-        uses: ./.github/actions/pytest-cache-download
-        continue-on-error: true
-        if: inputs.build-environment != 'linux-s390x-binary-manywheel' && steps.use-old-whl.outputs.reuse != 'true'
-        with:
-          cache_dir: .pytest_cache
-          job_identifier: ${{ github.workflow }}_${{ inputs.build-environment }}
-          s3_bucket: ${{ inputs.s3-bucket }}
+      # - name: Download pytest cache
+      #   uses: ./.github/actions/pytest-cache-download
+      #   continue-on-error: true
+      #   if: inputs.build-environment != 'linux-s390x-binary-manywheel' && steps.use-old-whl.outputs.reuse != 'true'
+      #   with:
+      #     cache_dir: .pytest_cache
+      #     job_identifier: ${{ github.workflow }}_${{ inputs.build-environment }}
+      #     s3_bucket: ${{ inputs.s3-bucket }}
 
       - name: Build
         if: (steps.filter.outputs.is-test-matrix-empty == 'False' || inputs.test-matrix == '') && steps.use-old-whl.outputs.reuse != 'true'
