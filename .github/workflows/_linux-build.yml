@@ -371,6 +371,7 @@ jobs:
           fi
 
           docker exec -t "${container_name}" sh -c "apt-get update && apt-get install -y python3"
+          docker exec -t "${container_name}" sh -c "DEBIAN_FRONTEND=noninteractive TZ=UTC apt install -y tzdata"
 
           docker exec -t "${container_name}" sh -c '.ci/pytorch/build.sh'
 
