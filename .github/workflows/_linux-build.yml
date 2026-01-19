@@ -185,7 +185,7 @@ jobs:
 
       - name: Pull docker image
         run : |
-         docker pull --platform=linux/amd64/v3 ubuntu:24.04 python:3.12
+         docker pull --platform=linux/amd64/v3 ubuntu:24.04
 
       # - name: Calculate docker image
       #   id: calculate-docker-image
@@ -369,6 +369,8 @@ jobs:
                 (sleep 60 && python3 -m pip install -r requirements.txt) || \
                 (sleep 300 && python3 -m pip install -r requirements.txt)"
           fi
+
+          docker exec -t "${container_name}" sh -c "apt-get update && apt-get install -y python3"
 
           docker exec -t "${container_name}" sh -c '.ci/pytorch/build.sh'
 
