@@ -372,7 +372,7 @@ jobs:
 
           docker exec -t "${container_name}" sh -c "apt-get update"
           docker exec -t "${container_name}" sh -c "DEBIAN_FRONTEND=noninteractive TZ=UTC apt install -y tzdata"
-          docker exec -t "${container_name}" sh -c "apt-get install -y python3 python3-pip python-is-python3"
+          docker exec -t "${container_name}" sh -c "apt-get install -y python3 python3-pip python-is-python3 python3-build python3-filelock python3-fsspec python3-hypothesis python3-jinja2 python3-networkx python3-psutil python3-spinners python3-sympy python3-typing-extensions python3-wheel cmake"
           docker exec -t "${container_name}" sh -c '.ci/pytorch/build.sh'
 
           END_TIME=$(date +%s)
