@@ -370,9 +370,9 @@ jobs:
                 (sleep 300 && python3 -m pip install -r requirements.txt)"
           fi
 
-          docker exec -t "${container_name}" sh -c "apt-get update && apt-get install -y python3"
+          docker exec -t "${container_name}" sh -c "apt-get update"
           docker exec -t "${container_name}" sh -c "DEBIAN_FRONTEND=noninteractive TZ=UTC apt install -y tzdata"
-
+          docker exec -t "${container_name}" sh -c "apt-get install -y python3"
           docker exec -t "${container_name}" sh -c '.ci/pytorch/build.sh'
 
           END_TIME=$(date +%s)
