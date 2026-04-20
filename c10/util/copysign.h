@@ -3,6 +3,9 @@
 #include <c10/util/BFloat16.h>
 #include <c10/util/Half.h>
 
+#include <cstdint>
+#include <cstring>
+
 namespace c10 {
 
 // Note: Explicit implementation of copysign for Half and BFloat16
@@ -12,6 +15,30 @@ template <typename T, typename U>
 inline auto copysign(const T& a, const U& b) {
   return std::copysign(a, b);
 }
+#if defined(__riscv)
+// Workaround for buggy std::copysign on some RISC-V toolchains/emulators.
+// Use bit manipulation to copy the sign bit, matching the approach already
+// used for Half and BFloat16.
+inline float copysign(float a, float b) {
+  uint32_t a_bits, b_bits;
+  std::memcpy(&a_bits, &a, sizeof(a));
+  std::memcpy(&b_bits, &b, sizeof(b));
+  a_bits = (a_bits & 0x7FFFFFFFU) | (b_bits & 0x80000000U);
+  float result;
+  std::memcpy(&result, &a_bits, sizeof(result));
+  return result;
+}
+
+inline double copysign(double a, double b) {
+  uint64_t a_bits, b_bits;
+  std::memcpy(&a_bits, &a, sizeof(a));
+  std::memcpy(&b_bits, &b, sizeof(b));
+  a_bits = (a_bits & 0x7FFFFFFFFFFFFFFFULL) | (b_bits & 0x8000000000000000ULL);
+  double result;
+  std::memcpy(&result, &a_bits, sizeof(result));
+  return result;
+}
+#endif
 
 // Implement copysign for half precision floats using bit ops
 // Sign is the most significant bit for both half and bfloat16 types
