@@ -15,18 +15,13 @@ namespace c10 {
 template <typename T, typename U>
 inline auto copysign(const T& a, const U& b) {
 #if defined(__riscv)
-  // Workaround for buggy std::copysign on some RISC-V toolchains/emulators.
-  // Use bit manipulation to copy the sign bit, matching the approach already
-  // used for Half and BFloat16. Using if constexpr inside the template
-  // guarantees the workaround is always selected for float/double, avoiding
-  // any overload resolution ambiguity with non-template overloads.
   if constexpr (std::is_same_v<float, std::decay_t<T>> &&
                 std::is_same_v<float, std::decay_t<U>>) {
     uint32_t a_bits, b_bits;
     std::memcpy(&a_bits, &a, sizeof(a));
     std::memcpy(&b_bits, &b, sizeof(b));
     a_bits = (a_bits & 0x7FFFFFFFU) | (b_bits & 0x80000000U);
-    std::decay_t<T> result;
+    float result;
     std::memcpy(&result, &a_bits, sizeof(result));
     return result;
   } else if constexpr (std::is_same_v<double, std::decay_t<T>> &&
@@ -35,9 +30,20 @@ inline auto copysign(const T& a, const U& b) {
     std::memcpy(&a_bits, &a, sizeof(a));
     std::memcpy(&b_bits, &b, sizeof(b));
     a_bits = (a_bits & 0x7FFFFFFFFFFFFFFFULL) | (b_bits & 0x8000000000000000ULL);
-    std::decay_t<T> result;
+    double result;
     std::memcpy(&result, &a_bits, sizeof(result));
     return result;
+  } else if constexpr (std::is_floating_point_v<std::decay_t<T>> &&
+                       std::is_floating_point_v<std::decay_t<U>>) {
+    double a_val = static_cast<double>(a);
+    double b_val = static_cast<double>(b);
+    uint64_t a_bits, b_bits;
+    std::memcpy(&a_bits, &a_val, sizeof(a_val));
+    std::memcpy(&b_bits, &b_val, sizeof(b_val));
+    a_bits = (a_bits & 0x7FFFFFFFFFFFFFFFULL) | (b_bits & 0x8000000000000000ULL);
+    double result;
+    std::memcpy(&result, &a_bits, sizeof(result));
+    return static_cast<double>(result);
   } else {
     return std::copysign(a, b);
   }
