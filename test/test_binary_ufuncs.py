@@ -2545,7 +2545,7 @@ class TestBinaryUfuncs(TestCase):
             if a.dtype != torch.float16 and b.dtype != torch.float16:
                 self.assertEqual(
                     torch.copysign(torch.tensor(1.0, dtype=orig_result.dtype), orig_result).to(torch.float64),
-                    torch.copysign(torch.tensor(1.0), expected),
+                    torch.copysign(torch.tensor(1.0), expected).to(torch.float64),
                 )
 
         # Compare Result with NumPy
