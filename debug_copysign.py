@@ -32,15 +32,16 @@ a2 = torch.tensor([0.0, -0.0], dtype=torch.float32)
 b2 = torch.tensor([-5, -5], dtype=torch.int64)
 result2 = torch.copysign(a2, b2)
 print(f"torch.copysign({a2}, {b2}) = {result2}")
-print(f"  [0] raw bits: 0x{result2[0].view(torch.int32).item():08X}")
-print(f"  [1] raw bits: 0x{result2[1].view(torch.int32).item():08X}")
+print(f"  [0] raw bits: 0x{result2[0].view(torch.int32).item() & 0xFFFFFFFF:08X}")
+print(f"  [1] raw bits: 0x{result2[1].view(torch.int32).item() & 0xFFFFFFFF:08X}")
 
 np_a2 = a2.cpu().numpy()
 np_b2 = b2.cpu().numpy()
 np_result2 = np.copysign(np_a2, np_b2)
 print(f"np.copysign result = {np_result2}")
-print(f"  [0] raw bits: 0x{np_result2[0].view('<u4').item():08X}")
-print(f"  [1] raw bits: 0x{np_result2[1].view('<u4').item():08X}")
+np_f32 = np_result2.astype(np.float32)
+print(f"  [0] raw bits: 0x{np_f32[0].view('<u4'):08X}")
+print(f"  [1] raw bits: 0x{np_f32[1].view('<u4'):08X}")
 
 # Test 3: sign check (like the test does)
 print("\n=== Test 3: Sign check ===")
@@ -60,6 +61,7 @@ result4 = torch.copysign(a4, b4)
 np_a4 = a4.cpu().numpy()
 np_b4 = b4.cpu().numpy()
 np_result4 = np.copysign(np_a4, np_b4)
+np_f32_4 = np_result4.astype(np.float32)
 
 # Value check
 value_match = torch.from_numpy(np_result4).eq(result4.to(torch.float64))
@@ -77,5 +79,25 @@ if mismatch_count > 0:
     for idx in mismatch_indices[:3]:
         i, j = idx[0].item(), idx[1].item()
         print(f"  [{i},{j}]: b={b4[i,j].item()}, "
-              f"torch_result={result4[i,j].item():+.1f} (bits=0x{result4[i,j].view(torch.int32).item():08X}), "
-              f"np_result={np_result4[i,j]:+.1f} (bits=0x{np_result4[i,j].view('<u4').item():08X})")
+              f"torch_result={result4[i,j].item():+.1f} (bits=0x{result4[i,j].view(torch.int32).item() & 0xFFFFFFFF:08X}), "
+              f"np_result={np_f32_4[i,j]:+.1f} (bits=0x{np_f32_4[i,j].view('<u4'):08X})")
+
+# Test 5: all special cases (like the full test)
+print("\n=== Test 5: All special cases ===")
+cases = [0.0, -0.0, float("inf"), float("-inf"), float("nan")]
+torch.manual_seed(123)
+b5 = torch.randint(-9, 10, (10, 10), dtype=torch.int64)
+np_b5 = b5.cpu().numpy()
+
+for case in cases:
+    a5 = torch.tensor([case], dtype=torch.float32)
+    r5 = torch.copysign(a5, b5)
+
+    np_a5 = a5.cpu().numpy()
+    np_r5 = np.copysign(np_a5, np_b5)
+
+    # Sign check
+    s_torch = torch.copysign(torch.tensor(1.0), r5)
+    s_np = torch.copysign(torch.tensor(1.0), torch.from_numpy(np_r5))
+    mismatches = (~s_torch.eq(s_np)).sum().item()
+    print(f"  case={case:>8}: sign mismatches = {mismatches} / {s_torch.numel()}")
