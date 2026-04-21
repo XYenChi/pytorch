@@ -1006,7 +1006,8 @@ class TestBinaryUfuncs(TestCase):
             a = torch.full(shape, num, dtype=dtype, device=device)
             b = torch.full(shape, denom, dtype=dtype, device=device)
 
-            ref = np.floor_divide(num, denom).item()
+            with np.errstate(divide="ignore", invalid="ignore", over="ignore"):
+                ref = np.floor_divide(num, denom).item()
             if ref > torch.finfo(dtype).max:
                 ref = np.inf
             elif ref < torch.finfo(dtype).min:
@@ -1452,7 +1453,8 @@ class TestBinaryUfuncs(TestCase):
             return value
 
         try:
-            np_res = np.power(to_np(base), to_np(np_exponent))
+            with np.errstate(divide="ignore", invalid="ignore"):
+                np_res = np.power(to_np(base), to_np(np_exponent))
             expected = (
                 torch.from_numpy(np_res)
                 if isinstance(np_res, np.ndarray)
@@ -4317,7 +4319,7 @@ class TestBinaryUfuncs(TestCase):
         )
         for base, exp in test_cases:
             for out_dtype in (torch.long, torch.float, torch.double, torch.cdouble):
-                out = torch.empty(1, device=device, dtype=out_dtype)
+                out = torch.empty(0, device=device, dtype=out_dtype)
                 required_dtype = _promo_helper(base, exp)
 
                 if out.dtype == required_dtype:
