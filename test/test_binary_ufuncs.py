@@ -2528,8 +2528,11 @@ class TestBinaryUfuncs(TestCase):
             types = integral_types_and(torch.bool, torch.bfloat16)
             if a.dtype in types or b.dtype in types:
                 promoted_type = torch.promote_types(torch_result.dtype, expected.dtype)
+                orig_result = torch_result
                 torch_result = torch_result.to(promoted_type)
                 expected = expected.to(promoted_type)
+            else:
+                orig_result = torch_result
 
             # Verify Value
             self.assertEqual(torch_result, expected)
@@ -2541,7 +2544,7 @@ class TestBinaryUfuncs(TestCase):
             # equivalent to pass this assertion.
             if a.dtype != torch.float16 and b.dtype != torch.float16:
                 self.assertEqual(
-                    torch.copysign(torch.tensor(1.0), torch_result),
+                    torch.copysign(torch.tensor(1.0, dtype=orig_result.dtype), orig_result).to(torch.float64),
                     torch.copysign(torch.tensor(1.0), expected),
                 )
 
