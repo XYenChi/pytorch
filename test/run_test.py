@@ -310,7 +310,7 @@ RISCV64_BLOCKLIST = [
     # TODO:scalar value not equal, need to fix
     "profiler/test_profiler",
     # TODO precision
-    "test_binary_ufuncs",
+    # "test_binary_ufuncs",
     "test_decomp",
     # TODO no CUDA related module
     "quantization/core/test_workflow_module",  # TestFakeQuantize.test_fq_module_per_channel
@@ -318,6 +318,24 @@ RISCV64_BLOCKLIST = [
     "quantization/core/test_quantized_op",
     # z3-solver build fail
     "test_proxy_tensor",
+    # ImportError: cannot import name 'make_fx' from 'functorch'
+    "inductor/test_efficient_conv_bn_eval",
+    # RuntimeError: extension_device already registered
+    "inductor/test_extension_backend",
+    # NoQEngine not supported on RISC-V
+    "test_ao_sparsity",
+    # hypothesis health check: multiple executors
+    "test_quantization",
+    # Crash in test_serialization_filelike_exceptions (pybind11 abort)
+    "test_serialization",
+    # GRAPH_EXECUTOR is not set
+    "test_jit_profiling",
+    # Missing parameterized module
+    "export/test_swap",
+    "higher_order_ops/test_invoke_subgraph",
+    "inductor/test_aot_inductor_package",
+    # Missing numpy.linalg.linalg module
+    "torch_np/numpy_tests/linalg/test_linalg",
 ]
 
 

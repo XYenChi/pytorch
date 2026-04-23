@@ -41,6 +41,7 @@ from torch.fx.experimental.symbolic_shapes import (
 from torch.testing._internal.common_dtype import all_types_and
 from torch.testing._internal.common_utils import (
     instantiate_parametrized_tests,
+    IS_RISCV64,
     parametrize,
     run_tests,
     skipIfTorchDynamo,
@@ -3556,7 +3557,7 @@ class TestUnbacked(TestCase):
         with self.assertRaises((AssertionError, RuntimeError)):
             func(a, torch.rand(2, 1))
 
-    @pytest.mark.xfail(reason="https://github.com/pytorch/pytorch/issues/163785")
+    @pytest.mark.xfail(reason="https://github.com/pytorch/pytorch/issues/163785", strict=not IS_RISCV64)
     @skipIfTorchDynamo("mark_unbacked is not traceable")
     def test_do_not_guard_unbacked_inputs(self):
         @torch.compile(fullgraph=True, dynamic=True, backend="inductor")

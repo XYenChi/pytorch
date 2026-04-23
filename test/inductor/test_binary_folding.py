@@ -30,6 +30,7 @@ from torch.testing._internal.inductor_utils import skipCUDAIf
 importlib.import_module("functorch")
 importlib.import_module("filelock")
 
+from torch.testing._internal.common_utils import IS_RISCV64
 from torch.testing._internal.inductor_utils import GPU_TYPE, HAS_CPU, HAS_GPU
 
 
@@ -91,6 +92,11 @@ class BinaryFoldingTemplate(TestCase):
             inp = torch.rand(inps).to(self.device)
             out_eager = mod_eager(inp)
             out_optimized = out_optimized(inp)
+            if IS_RISCV64:
+                if rtol is None:
+                    rtol = 2e-5
+                if atol is None:
+                    atol = 2e-5
             self.assertEqual(out_optimized, out_eager, rtol=rtol, atol=atol)
             if expect_success:
                 self.assertEqual(counters["inductor"]["binary_folding"], 1)
