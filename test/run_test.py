@@ -322,10 +322,8 @@ RISCV64_BLOCKLIST = [
     "inductor/test_efficient_conv_bn_eval",
     # RuntimeError: extension_device already registered
     "inductor/test_extension_backend",
-    # NoQEngine not supported on RISC-V
+    # NoQEngine not supported on RISC-V (ao_sparse path not handled)
     "test_ao_sparsity",
-    # hypothesis health check: multiple executors
-    "test_quantization",
     # Crash in test_serialization_filelike_exceptions (pybind11 abort)
     "test_serialization",
     # GRAPH_EXECUTOR is not set
