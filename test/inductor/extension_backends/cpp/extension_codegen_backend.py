@@ -7,10 +7,59 @@ class ExtensionWrapperCodegen(wrapper.PythonWrapperCodegen):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
+    @staticmethod
+    def create(
+        is_subgraph,
+        subgraph_name,
+        parent_wrapper,
+        partition_signatures=None,
+    ):
+        return ExtensionWrapperCodegen()
+
+    def _generate_kernel_call_helper(
+        self,
+        kernel_name,
+        call_args,
+        *,
+        device=None,
+        triton=True,
+        **kwargs,
+    ):
+        # The base PythonWrapperCodegen only knows about "cpu" and "mps" for
+        # non-triton kernels. Treat the dummy extension_device as a CPU kernel
+        # so calls into it can be generated.
+        if not triton and device is not None and device.type == "extension_device":
+            self.writeline(self.wrap_kernel_call(kernel_name, call_args))
+            return
+        return super()._generate_kernel_call_helper(
+            kernel_name,
+            call_args,
+            device=device,
+            triton=triton,
+            **kwargs,
+        )
+
 
 class ExtensionCppWrapperCodegen(cpp_wrapper_cpu.CppWrapperCpu):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+
+    @staticmethod
+    def create(
+        is_subgraph,
+        subgraph_name,
+        parent_wrapper,
+        partition_signatures=None,
+    ):
+        # CppWrapperCpu.create() hard-codes its own type, so override here so that
+        # this subclass's get_device_include_path is actually used.
+        return ExtensionCppWrapperCodegen()
+
+    @staticmethod
+    def get_device_include_path(device: str) -> str:
+        # The extension backend reuses the CPU wrapper headers; there is no
+        # bespoke <torch/csrc/inductor/cpp_wrapper/extension_device.h>.
+        return cpp_wrapper_cpu.CppWrapperCpu.get_device_include_path("cpu")
 
 
 class ExtensionScheduling(BaseScheduling):

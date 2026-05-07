@@ -2851,11 +2851,18 @@ def _get_cpp_wrapper_header(device: str, aot_mode: bool = False) -> str:
     the path to the cpp_wrapper header file to be precompiled."""
     base_device = device.split(":", maxsplit=1)[0]
     is_array_ref = config.aot_inductor.allow_stack_allocation and base_device == "cpu"
-    return (
-        "torch/csrc/inductor/"
-        f"{'aoti_include' if aot_mode else 'cpp_wrapper'}/"
-        f"{'array_ref' if is_array_ref else base_device}.h"
+    subdir = "aoti_include" if aot_mode else "cpp_wrapper"
+    name = "array_ref" if is_array_ref else base_device
+    rel_path = f"torch/csrc/inductor/{subdir}/{name}.h"
+    # Out-of-tree backends (registered via register_backend_for_device) may not
+    # ship a bespoke wrapper header; fall back to the CPU header in that case
+    # so precompilation does not fail with a missing include.
+    abs_path = os.path.join(
+        os.path.dirname(torch.__file__), "include", rel_path
     )
+    if not os.path.exists(abs_path):
+        rel_path = f"torch/csrc/inductor/{subdir}/cpu.h"
+    return rel_path
 
 
 @clear_on_fresh_cache

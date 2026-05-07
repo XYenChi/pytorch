@@ -185,4 +185,8 @@ bool custom_op_called() {
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     m.def("custom_device", &get_custom_device, "get custom device object");
     m.def("custom_op_called", &custom_op_called, "check if our custom function was called");
+    // `torch.accelerator.is_available()` delegates to the registered device
+    // module's `is_available`. This dummy backend has no real accelerator
+    // runtime, so report False to keep accelerator-only code paths inert.
+    m.def("is_available", []() { return false; }, "whether this extension backend has an available accelerator");
 }
