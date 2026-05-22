@@ -2804,26 +2804,34 @@ try:
             kwargs.pop('min_satisfying_examples')
         return hypothesis.settings(*args, **kwargs)
 
+    # Build the suppressed-health-check list. ``differing_executors`` is only
+    # available in newer hypothesis versions; it fires spuriously for our
+    # quantization tests (and similar) which legitimately reuse the same
+    # ``given``-decorated method across multiple TestCase subclasses.
+    _suppressed_health_checks = [hypothesis.HealthCheck.too_slow]
+    _differing = getattr(hypothesis.HealthCheck, "differing_executors", None)
+    if _differing is not None:
+        _suppressed_health_checks.append(_differing)
 
     hypothesis.settings.register_profile(
         "pytorch_ci",
         settings(
             derandomize=True,
-            suppress_health_check=[hypothesis.HealthCheck.too_slow],
+            suppress_health_check=_suppressed_health_checks,
             database=None,
             max_examples=50,
             verbosity=hypothesis.Verbosity.normal))
     hypothesis.settings.register_profile(
         "dev",
         settings(
-            suppress_health_check=[hypothesis.HealthCheck.too_slow],
+            suppress_health_check=_suppressed_health_checks,
             database=None,
             max_examples=10,
             verbosity=hypothesis.Verbosity.normal))
     hypothesis.settings.register_profile(
         "debug",
         settings(
-            suppress_health_check=[hypothesis.HealthCheck.too_slow],
+            suppress_health_check=_suppressed_health_checks,
             database=None,
             max_examples=1000,
             verbosity=hypothesis.Verbosity.verbose))
