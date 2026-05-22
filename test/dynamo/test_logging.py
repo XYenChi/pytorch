@@ -112,6 +112,37 @@ def normalize_rank_prefix(output: str) -> str:
     return re.sub(r"(^|\n)(?:[A-Z]+:[^:]+:)", repl, output)
 
 
+# Matches the first line of a libtorch C++ warning emitted by OperatorEntry
+# (or similar), e.g.:
+#   [W522 03:14:49.775843552 OperatorEntry.cpp:208] Warning: ...
+# These warnings are written to the subprocess's stderr but never reach the
+# Python TORCH_LOGS_OUT file, so they cause spurious diff in test_logs_out
+# on builds that have any redundantly-registered C++ kernels.
+_CPP_WARN_HEAD_RE = re.compile(
+    r"^\[[WEI]\d{3,4} [\d:.]+ [^\]]+\.\w+:\d+\][^\n]*\n"
+)
+
+
+def _strip_cpp_warnings(output: str) -> str:
+    """Remove libtorch C++ warning blocks (header + indented continuation
+    lines) from ``output`` so subprocess stderr can be compared against the
+    Python-logger TORCH_LOGS_OUT file."""
+    lines = output.splitlines(keepends=True)
+    out = []
+    i = 0
+    while i < len(lines):
+        if _CPP_WARN_HEAD_RE.match(lines[i]):
+            i += 1
+            # Drop subsequent indented continuation lines belonging to the
+            # same warning block.
+            while i < len(lines) and lines[i].startswith((" ", "\t")):
+                i += 1
+            continue
+        out.append(lines[i])
+        i += 1
+    return "".join(out)
+
+
 def example_fn(a):
     output = a.mul(torch.ones(1000, 1000))
     output = output.add(torch.ones(1000, 1000))
@@ -1410,7 +1441,9 @@ fn(torch.randn(5))
                 try:
                     self.assertEqual(  # process wrap difference: /r/n on Windows, /n on posix.
                         empty_line_normalizer(lines),
-                        empty_line_normalizer(stderr.decode("utf-8")),
+                        empty_line_normalizer(
+                            _strip_cpp_warnings(stderr.decode("utf-8"))
+                        ),
                     )
                 except Exception:
                     unittest.TestCase.maxDiff = orig_maxDiff
