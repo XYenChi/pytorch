@@ -332,6 +332,9 @@ class TestDCE(TestCase):
         self._run_dce_and_test(TestModule(), expect_dce_changes=False, custom=True)
 
     @unittest.skipIf(IS_MACOS, "Not working on macos")
+    @unittest.skipIf(
+        not torch.distributed.is_available(), "torch.distributed is not available"
+    )
     def test_keep_collectives(self):
         """
         Test that DCE doesn't remote collective ops even the results are not used.
@@ -357,6 +360,9 @@ class TestDCE(TestCase):
         torch.distributed.destroy_process_group()
 
     @unittest.skipIf(IS_MACOS, "Not working on macos")
+    @unittest.skipIf(
+        not torch.distributed.is_available(), "torch.distributed is not available"
+    )
     def test_keep_collectives_no_overload(self):
         """
         Test that DCE doesn't remote collective ops (no overload version) even the results are not used.
