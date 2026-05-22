@@ -102,8 +102,12 @@ class EfficientConvBNEvalTemplate(TestCase):
         def test_conv_bn_eval(
             test_class, use_bias, module, sync_bn, decompose_nn_module
         ):
-            from functorch import make_fx
+            # Use the canonical import path; `from functorch import make_fx` can
+            # fail with "(unknown location)" if the functorch namespace gets
+            # mutated by intervening config patches or dispatcher state changes
+            # before this nested import executes.
             from torch._dispatch.python import enable_python_dispatcher
+            from torch.fx.experimental.proxy_tensor import make_fx
 
             kwargs = {"kernel_size": 3, "stride": 2} if module[0] != nn.Linear else {}
             mod_eager = test_class(
