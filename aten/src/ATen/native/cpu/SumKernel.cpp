@@ -1,4 +1,10 @@
 #define TORCH_ASSERT_NO_OPERATORS
+// Workaround for a GCC RVV auto-vectorizer miscompile of the complex<float>
+// scalar cascade-sum loops in this file under -march=rv64gcv -O3, which
+// produces NaN in the imaginary partial sums for some inputs.
+#if defined(__riscv) && defined(__GNUC__) && !defined(__clang__)
+#pragma GCC optimize("no-tree-vectorize")
+#endif
 #include <ATen/AccumulateType.h>
 #include <ATen/Dispatch.h>
 #include <ATen/native/ReduceOps.h>
