@@ -1,4 +1,11 @@
 #define TORCH_ASSERT_NO_OPERATORS
+// Workaround for a GCC RVV auto-vectorizer miscompile of the complex<float>
+// fill kernel under -march=rv64gcv -O3, which produces NaN in the imaginary
+// component when filling with a complex scalar with non-zero imag part
+// (e.g. torch.full((5,), -5.84-3.65j, dtype=torch.complex64)).
+#if defined(__riscv) && defined(__GNUC__) && !defined(__clang__)
+#pragma GCC optimize("no-tree-vectorize")
+#endif
 #include <ATen/Dispatch_v2.h>
 #include <ATen/Parallel.h>
 #include <ATen/cpu/vec/vec.h>
