@@ -1,4 +1,11 @@
 #define TORCH_ASSERT_NO_OPERATORS
+// Workaround for a GCC RVV auto-vectorizer miscompile of the complex<float>
+// scalar arithmetic in linspace_kernel under -march=rv64gcv -O3, which
+// produces NaN in the imaginary parts when start/end have a zero imaginary
+// component (e.g. torch.linspace(-2.0, -3, 50, dtype=torch.complex64)).
+#if defined(__riscv) && defined(__GNUC__) && !defined(__clang__)
+#pragma GCC optimize("no-tree-vectorize")
+#endif
 #include <ATen/native/RangeFactories.h>
 #include <cmath>
 #include <ATen/Config.h>
