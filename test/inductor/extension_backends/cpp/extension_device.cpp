@@ -185,4 +185,12 @@ bool custom_op_called() {
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     m.def("custom_device", &get_custom_device, "get custom device object");
     m.def("custom_op_called", &custom_op_called, "check if our custom function was called");
+    // Minimal device-module surface expected by torch.accelerator / torch._dynamo
+    // when this module is registered as the PrivateUse1 backend module via
+    // torch._register_device_module. Without these, code paths such as
+    // torch._dynamo.variables.streams.SymbolicStreamState calling
+    // torch.accelerator.is_available() raise AttributeError on platforms with
+    // no other accelerator (e.g. CPU-only RISC-V builds).
+    m.def("is_available", []() { return false; }, "whether the custom device is available");
+    m.def("device_count", []() { return 0; }, "number of custom devices");
 }

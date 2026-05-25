@@ -33,7 +33,7 @@ from torch._inductor.codegen.common import (
     get_wrapper_codegen_for_device,
     register_backend_for_device,
 )
-from torch.testing._internal.common_utils import IS_FBCODE, IS_MACOS, xfailIfS390X
+from torch.testing._internal.common_utils import IS_FBCODE, IS_MACOS, xfailIfRISCV, xfailIfS390X
 
 
 try:
@@ -117,6 +117,7 @@ class BaseExtensionBackendTests(TestCase):
 @unittest.skipIf(IS_FBCODE, "cpp_extension doesn't work in fbcode right now")
 class ExtensionBackendTests(BaseExtensionBackendTests):
     @skipIfWindows
+    @xfailIfRISCV
     def test_open_device_registration(self):
         torch.utils.rename_privateuse1_backend("extension_device")
         torch._register_device_module("extension_device", self.module)
