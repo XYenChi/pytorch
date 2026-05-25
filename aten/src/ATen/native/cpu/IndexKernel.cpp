@@ -1,4 +1,12 @@
 #define TORCH_ASSERT_NO_OPERATORS
+// Workaround for a GCC RVV auto-vectorizer miscompile of the complex<float>
+// store in cpu_masked_fill_kernel under -march=rv64gcv -O3, which produces
+// NaN in the imaginary component when filling a 0-d / small complex64 tensor
+// with a non-zero imaginary scalar
+// (e.g. masked_fill(tensor(0j), tensor(True), tensor(-8.07-0.57j))).
+#if defined(__riscv) && defined(__GNUC__) && !defined(__clang__)
+#pragma GCC optimize("no-tree-vectorize")
+#endif
 #include <ATen/native/IndexKernel.h>
 
 #include <cmath>
