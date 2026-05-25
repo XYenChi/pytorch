@@ -1,4 +1,12 @@
 #define TORCH_ASSERT_NO_OPERATORS
+// Workaround for a GCC RVV auto-vectorizer miscompile of the complex<float>
+// logaddexp scalar kernel under -march=rv64gcv -O3, which produces NaN in
+// the imaginary component when both operands are real-valued complex
+// (e.g. logaddexp(tensor(-1.13+0j), tensor(-0.57+0j)) returns
+// tensor(-0.116+nanj)).
+#if defined(__riscv) && defined(__GNUC__) && !defined(__clang__)
+#pragma GCC optimize("no-tree-vectorize")
+#endif
 #include <ATen/native/BinaryOps.h>
 
 #include <cmath>
