@@ -19350,6 +19350,15 @@ op_db: list[OpInfo] = [
                DecorateInfo(unittest.expectedFailure, 'TestSchemaCheckModeOpInfo', 'test_schema_correctness',
                             dtypes=(torch.complex64, torch.complex128)),
                DecorateInfo(unittest.skip('output is non-deterministic'), 'TestCommon', 'test_compare_cpu'),
+               # pca_lowrank uses randomized QR iteration whose eigenvector basis
+               # is sensitive to ~1 ULP differences in the matmul `a @ b.mT` between
+               # contiguous and non-contiguous inputs. For complex64 on some CPU
+               # backends (e.g. RISC-V) this perturbation can flip a singular vector
+               # basis when two singular values are close, producing diffs far above
+               # the toleranceOverride above. Skip the noncontig test for complex64.
+               DecorateInfo(unittest.skip('numerically unstable on close singular values'),
+                            'TestCommon', 'test_noncontiguous_samples',
+                            dtypes=(torch.complex64,)),
            )),
     BinaryUfuncInfo('polar',
                     dtypes=floating_types(),
