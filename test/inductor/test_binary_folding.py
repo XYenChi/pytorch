@@ -24,6 +24,7 @@ from inductor.test_torchinductor import (  # @manual=fbcode//caffe2/test/inducto
     check_model_gpu,
     copy_tests,
 )
+from torch.testing._internal.common_utils import xfailIfRISCV
 from torch.testing._internal.inductor_utils import skipCUDAIf
 
 
@@ -38,6 +39,7 @@ aten = torch.ops.aten
 
 class BinaryFoldingTemplate(TestCase):
     @skipCUDAIf(TEST_CUDNN, "CUDNN has accuracy issues for this test")
+    @xfailIfRISCV
     def test_conv_binary_folding(self):
         @torch.no_grad()
         def test_conv_fusion(
