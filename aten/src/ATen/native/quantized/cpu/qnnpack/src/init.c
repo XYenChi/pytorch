@@ -349,6 +349,10 @@ static void init(void) {
   pytorch_qnnp_params.u8rmax = pytorch_u8rmax_ukernel__sse2;
   pytorch_qnnp_params.u8lut32norm = pytorch_u8lut32norm_ukernel__scalar;
   pytorch_qnnp_params.x8lut = pytorch_x8lut_ukernel__scalar;
+#elif CPUINFO_ARCH_RISCV64
+  pytorch_qnnp_log_error(
+      "QNNPACK initialization failed: RISC-V microkernels are not available");
+  return;
 #else
 #error "Unsupported architecture"
 #endif

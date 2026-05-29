@@ -54,7 +54,7 @@ if(NOT CMAKE_SYSTEM_PROCESSOR)
   else()
     message(FATAL_ERROR "CMAKE_SYSTEM_PROCESSOR is not defined")
   endif()
-elseif(NOT CMAKE_SYSTEM_PROCESSOR MATCHES "^(i[3-6]86|x86_64|armv[5-8].*|aarch64|arm64)$")
+elseif(NOT CMAKE_SYSTEM_PROCESSOR MATCHES "^(i[3-6]86|x86_64|armv[5-8].*|aarch64|arm64|riscv64)$")
   message(FATAL_ERROR "Unrecognized CMAKE_SYSTEM_PROCESSOR = ${CMAKE_SYSTEM_PROCESSOR}")
 endif()
 

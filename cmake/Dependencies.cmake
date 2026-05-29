@@ -355,10 +355,10 @@ if(USE_NNPACK OR USE_PYTORCH_QNNPACK OR USE_XNNPACK)
         "Turn this warning off by USE_{Q/X}NNPACK=OFF.")
       set(DISABLE_NNPACK_AND_FAMILY ON)
     endif()
-    if(NOT IOS AND NOT (CMAKE_SYSTEM_PROCESSOR MATCHES "^(i686|AMD64|x86_64|armv[0-9].*|arm64|aarch64)$"))
+    if(NOT IOS AND NOT (CMAKE_SYSTEM_PROCESSOR MATCHES "^(i686|AMD64|x86_64|armv[0-9].*|arm64|aarch64|riscv64)$"))
       message(WARNING
         "Target architecture \"${CMAKE_SYSTEM_PROCESSOR}\" is not supported in {Q/X}NNPACK. "
-        "Supported architectures are x86, x86-64, ARM, and ARM64. "
+        "Supported architectures are x86, x86-64, ARM, ARM64, and RISC-V. "
         "Turn this warning off by USE_{Q/X}NNPACK=OFF.")
       set(DISABLE_NNPACK_AND_FAMILY ON)
     endif()
@@ -583,7 +583,9 @@ if(USE_XNNPACK AND NOT USE_SYSTEM_XNNPACK)
 
     if(CMAKE_C_COMPILER_ID STREQUAL "GNU" AND CMAKE_C_COMPILER_VERSION VERSION_GREATER_EQUAL "14")
       foreach(xnn_tgt IN ITEMS XNNPACK microkernels-prod microkernels-all)
+        if(TARGET ${xnn_tgt})
           target_compile_options(${xnn_tgt} PRIVATE -Wno-error=incompatible-pointer-types)
+        endif()
       endforeach()
     endif()
 
@@ -592,7 +594,10 @@ if(USE_XNNPACK AND NOT USE_SYSTEM_XNNPACK)
   endif()
 
   include_directories(SYSTEM ${XNNPACK_INCLUDE_DIR})
-  list(APPEND Caffe2_DEPENDENCY_LIBS XNNPACK microkernels-prod)
+  list(APPEND Caffe2_DEPENDENCY_LIBS XNNPACK)
+  if(TARGET microkernels-prod)
+    list(APPEND Caffe2_DEPENDENCY_LIBS microkernels-prod)
+  endif()
 elseif(NOT TARGET XNNPACK AND USE_SYSTEM_XNNPACK)
   add_library(XNNPACK SHARED IMPORTED)
   add_library(microkernels-prod SHARED IMPORTED)
