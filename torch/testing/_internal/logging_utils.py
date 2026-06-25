@@ -163,10 +163,17 @@ class LoggingTestCase(torch._dynamo.test_case.TestCase):
             nonlocal record_list
             record_list.append(record)
 
-        # registered logs are the only ones with handlers, so patch those
+        # registered logs are the only ones with handlers, so patch those.
+        # Only consider handlers installed by torch itself; external test
+        # runners (e.g. pytest's logging plugin) may attach their own
+        # handlers to every logger and those should not be counted here.
         for log_qname in torch._logging._internal.log_registry.get_log_qnames():
             logger = logging.getLogger(log_qname)
-            num_handlers = len(logger.handlers)
+            torch_handlers = [
+                h for h in logger.handlers
+                if torch._logging._internal._is_torch_handler(h)
+            ]
+            num_handlers = len(torch_handlers)
             self.assertLessEqual(
                 num_handlers,
                 2,
@@ -175,7 +182,7 @@ class LoggingTestCase(torch._dynamo.test_case.TestCase):
 
             self.assertGreater(num_handlers, 0, "All pt2 loggers should have more than zero handlers")
 
-            for handler in logger.handlers:
+            for handler in torch_handlers:
                 old_emit = handler.emit
 
                 def new_emit(record):
