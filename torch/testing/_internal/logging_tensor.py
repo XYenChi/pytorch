@@ -65,7 +65,10 @@ class LoggingTensor(torch.Tensor):
 
         with cls.context():
             rs = tree_map(wrap, func(*tree_map(unwrap, args), **tree_map(unwrap, kwargs)))
-        logging.getLogger("LoggingTensor").info(f"{func.__module__}.{func.__name__}", args, kwargs, rs)  # noqa: G004
+        logging.getLogger("LoggingTensor").info(
+            "%s.%s", func.__module__, func.__name__,
+            extra={"logging_tensor_call": (args, kwargs, rs)},
+        )
         return rs
 
 class LoggingTensorMode(TorchDispatchMode):
@@ -73,7 +76,10 @@ class LoggingTensorMode(TorchDispatchMode):
         if kwargs is None:
             kwargs = {}
         rs = func(*args, **kwargs)
-        logging.getLogger("LoggingTensor").info(f"{func.__module__}.{func.__name__}", args, kwargs, rs)  # noqa: G004
+        logging.getLogger("LoggingTensor").info(
+            "%s.%s", func.__module__, func.__name__,
+            extra={"logging_tensor_call": (args, kwargs, rs)},
+        )
         return rs
 
 class LoggingTensorReentrant(LoggingTensor):
@@ -110,19 +116,23 @@ class LoggingTensorHandler(logging.Handler):
             return repr(a)
 
     def emit(self, record):
+        call = getattr(record, "logging_tensor_call", None)
+        if call is None:
+            return
+        call_args, call_kwargs, call_rs = call
         fmt_args = ", ".join(
             itertools.chain(
-                (str(tree_map(self._fmt, a)) for a in record.args[0]),
-                (f"{k}={str(tree_map(self._fmt, v))}" for k, v in record.args[1].items()),
+                (str(tree_map(self._fmt, a)) for a in call_args),
+                (f"{k}={str(tree_map(self._fmt, v))}" for k, v in call_kwargs.items()),
             )
         )
-        fmt_rets = tree_map(functools.partial(self._fmt, with_type=True), record.args[2])
-        self.log_list.append(f'{fmt_rets} = {record.msg}({fmt_args})')
+        fmt_rets = tree_map(functools.partial(self._fmt, with_type=True), call_rs)
+        self.log_list.append(f'{fmt_rets} = {record.getMessage()}({fmt_args})')
         if self.tracebacks_list is not None:
             self.tracebacks_list.append(record.traceback)
 
 def log_input(name: str, var: object) -> None:
-    logger.info("input", (name,), {}, var)  # noqa: PLE1205
+    logger.info("input", extra={"logging_tensor_call": ((name,), {}, var)})
 
 class GatherTraceback(logging.Filter):
     def __init__(self, python=True, script=True, cpp=False):
