@@ -6,6 +6,7 @@ from collections.abc import Iterator
 import logging
 import contextlib
 import itertools
+import threading
 from torch.utils._dtype_abbrs import dtype_abbrs as _dtype_abbrs
 from torch.utils._python_dispatch import TorchDispatchMode
 from torch.utils.weak import WeakTensorKeyDictionary
@@ -13,6 +14,34 @@ import functools
 from torch._C._profiler import gather_traceback, symbolize_tracebacks
 
 logger = logging.getLogger("LoggingTensor")
+
+# Tensors are passed from the dispatch-side producer (LoggingTensor /
+# LoggingTensorMode / log_input) to LoggingTensorHandler via a thread-local
+# stack instead of LogRecord attributes. If tensors were attached to records
+# (via `extra=` or positional args), pytest's caplog plugin retains the records
+# and therefore the tensor references; that has been observed to perturb
+# dispatch (e.g. spurious aten.detach.default) in subsequent operations inside
+# the same LoggingTensorMode block. The producer pushes before logger.info and
+# pops after it returns, so every handler sees the current call via _peek_call.
+_call_stack = threading.local()
+
+def _push_call(call):
+    s = getattr(_call_stack, "s", None)
+    if s is None:
+        s = []
+        _call_stack.s = s
+    s.append(call)
+
+def _pop_call():
+    s = getattr(_call_stack, "s", None)
+    if s:
+        s.pop()
+
+def _peek_call():
+    s = getattr(_call_stack, "s", None)
+    if not s:
+        return None
+    return s[-1]
 
 # How the chain of calls works for LoggingTensor:
 # 1. Call torch.sin
@@ -65,7 +94,11 @@ class LoggingTensor(torch.Tensor):
 
         with cls.context():
             rs = tree_map(wrap, func(*tree_map(unwrap, args), **tree_map(unwrap, kwargs)))
-        logging.getLogger("LoggingTensor").info(f"{func.__module__}.{func.__name__}", args, kwargs, rs)  # noqa: G004
+        _push_call((args, kwargs, rs))
+        try:
+            logging.getLogger("LoggingTensor").info("%s.%s", func.__module__, func.__name__)
+        finally:
+            _pop_call()
         return rs
 
 class LoggingTensorMode(TorchDispatchMode):
@@ -73,7 +106,11 @@ class LoggingTensorMode(TorchDispatchMode):
         if kwargs is None:
             kwargs = {}
         rs = func(*args, **kwargs)
-        logging.getLogger("LoggingTensor").info(f"{func.__module__}.{func.__name__}", args, kwargs, rs)  # noqa: G004
+        _push_call((args, kwargs, rs))
+        try:
+            logging.getLogger("LoggingTensor").info("%s.%s", func.__module__, func.__name__)
+        finally:
+            _pop_call()
         return rs
 
 class LoggingTensorReentrant(LoggingTensor):
@@ -110,19 +147,27 @@ class LoggingTensorHandler(logging.Handler):
             return repr(a)
 
     def emit(self, record):
+        call = _peek_call()
+        if call is None:
+            return
+        call_args, call_kwargs, call_rs = call
         fmt_args = ", ".join(
             itertools.chain(
-                (str(tree_map(self._fmt, a)) for a in record.args[0]),
-                (f"{k}={str(tree_map(self._fmt, v))}" for k, v in record.args[1].items()),
+                (str(tree_map(self._fmt, a)) for a in call_args),
+                (f"{k}={str(tree_map(self._fmt, v))}" for k, v in call_kwargs.items()),
             )
         )
-        fmt_rets = tree_map(functools.partial(self._fmt, with_type=True), record.args[2])
-        self.log_list.append(f'{fmt_rets} = {record.msg}({fmt_args})')
+        fmt_rets = tree_map(functools.partial(self._fmt, with_type=True), call_rs)
+        self.log_list.append(f'{fmt_rets} = {record.getMessage()}({fmt_args})')
         if self.tracebacks_list is not None:
             self.tracebacks_list.append(record.traceback)
 
 def log_input(name: str, var: object) -> None:
-    logger.info("input", (name,), {}, var)  # noqa: PLE1205
+    _push_call(((name,), {}, var))
+    try:
+        logger.info("input")
+    finally:
+        _pop_call()
 
 class GatherTraceback(logging.Filter):
     def __init__(self, python=True, script=True, cpp=False):
