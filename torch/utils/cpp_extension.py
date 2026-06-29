@@ -2562,6 +2562,12 @@ def _prepare_ldflags(extra_ldflags, with_cuda, with_sycl, verbose, is_standalone
 
         if is_standalone:
             extra_ldflags.append(f"-Wl,-rpath,{TORCH_LIB_PATH}")
+            rpath_link_dirs = [TORCH_LIB_PATH]
+            rpath_link_dirs += [
+                path for path in os.environ.get("LD_LIBRARY_PATH", "").split(os.pathsep)
+                if path
+            ]
+            extra_ldflags += [f"-Wl,-rpath-link,{path}" for path in rpath_link_dirs]
 
     if with_cuda:
         if verbose:
