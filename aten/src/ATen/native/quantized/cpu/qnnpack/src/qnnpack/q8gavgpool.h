@@ -32,6 +32,7 @@ extern "C" {
 
 DECLARE_PYTORCH_Q8MPGAVGPOOL_UKERNEL_FUNCTION(pytorch_q8gavgpool_ukernel_mp8x7p7q__neon)
 DECLARE_PYTORCH_Q8MPGAVGPOOL_UKERNEL_FUNCTION(pytorch_q8gavgpool_ukernel_mp8x7p7q__sse2)
+DECLARE_PYTORCH_Q8MPGAVGPOOL_UKERNEL_FUNCTION(pytorch_q8gavgpool_ukernel_mp8x7p7q__scalar)
 
 #define DECLARE_PYTORCH_Q8UPGAVGPOOL_UKERNEL_FUNCTION(fn_name)      \
   PYTORCH_QNNP_INTERNAL void fn_name(                       \
@@ -48,6 +49,8 @@ DECLARE_PYTORCH_Q8UPGAVGPOOL_UKERNEL_FUNCTION(pytorch_q8gavgpool_ukernel_up8x7__
 DECLARE_PYTORCH_Q8UPGAVGPOOL_UKERNEL_FUNCTION(pytorch_q8gavgpool_ukernel_up8xm__neon)
 DECLARE_PYTORCH_Q8UPGAVGPOOL_UKERNEL_FUNCTION(pytorch_q8gavgpool_ukernel_up8x7__sse2)
 DECLARE_PYTORCH_Q8UPGAVGPOOL_UKERNEL_FUNCTION(pytorch_q8gavgpool_ukernel_up8xm__sse2)
+DECLARE_PYTORCH_Q8UPGAVGPOOL_UKERNEL_FUNCTION(pytorch_q8gavgpool_ukernel_up8x7__scalar)
+DECLARE_PYTORCH_Q8UPGAVGPOOL_UKERNEL_FUNCTION(pytorch_q8gavgpool_ukernel_up8xm__scalar)
 
 #ifdef __cplusplus
 } /* extern "C" */

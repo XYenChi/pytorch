@@ -54,7 +54,7 @@ if(NOT CMAKE_SYSTEM_PROCESSOR)
   else()
     message(FATAL_ERROR "CMAKE_SYSTEM_PROCESSOR is not defined")
   endif()
-elseif(NOT CMAKE_SYSTEM_PROCESSOR MATCHES "^(i[3-6]86|x86_64|armv[5-8].*|aarch64|arm64)$")
+elseif(NOT CMAKE_SYSTEM_PROCESSOR MATCHES "^(i[3-6]86|x86_64|armv[5-8].*|aarch64|arm64|riscv64)$")
   message(FATAL_ERROR "Unrecognized CMAKE_SYSTEM_PROCESSOR = ${CMAKE_SYSTEM_PROCESSOR}")
 endif()
 
@@ -182,6 +182,19 @@ set(PYTORCH_QNNPACK_SCALAR_UKERNELS
   src/u8lut32norm/scalar.c
   src/x8lut/scalar.c)
 
+set(PYTORCH_QNNPACK_RISCV_SCALAR_UKERNELS
+  src/q8avgpool/scalar.c
+  src/q8conv/scalar.c
+  src/q8dwconv/up8x9-scalar.c
+  src/q8dwconv/mp8x25-scalar.c
+  src/q8gavgpool/scalar.c
+  src/q8gemm/scalar.c
+  src/q8vadd/scalar.c
+  src/u8clamp/scalar.c
+  src/u8maxpool/scalar.c
+  src/u8rmax/scalar.c
+  src/x8zip/scalar.c)
+
 set(PYTORCH_QNNPACK_PSIMD_UKERNELS
   src/sgemm/6x8-psimd.c)
 
@@ -277,6 +290,9 @@ endif()
 if(PYTORCH_QNNPACK_TARGET_PROCESSOR MATCHES "^(i[3-6]86|x86_64)$" OR IOS_ARCH MATCHES "^(i386|x86_64)$")
   list(APPEND PYTORCH_QNNPACK_UKERNELS ${PYTORCH_QNNPACK_X86_SSE2_UKERNELS})
 endif()
+if(PYTORCH_QNNPACK_TARGET_PROCESSOR STREQUAL "riscv64")
+  list(APPEND PYTORCH_QNNPACK_UKERNELS ${PYTORCH_QNNPACK_RISCV_SCALAR_UKERNELS})
+endif()
 
 if(PYTORCH_QNNPACK_LIBRARY_TYPE STREQUAL "default")
   add_library(pytorch_qnnpack ${PYTORCH_QNNPACK_INIT_SRCS} ${PYTORCH_QNNPACK_EXEC_SRCS} ${PYTORCH_QNNPACK_UKERNELS})
@@ -305,6 +321,9 @@ if(PYTORCH_QNNPACK_TARGET_PROCESSOR MATCHES "^(aarch64|arm64)$" OR IOS_ARCH MATC
 endif()
 if(PYTORCH_QNNPACK_TARGET_PROCESSOR MATCHES "^(i[3-6]86|x86_64)$" OR IOS_ARCH MATCHES "^(i386|x86_64)$")
   set_property(SOURCE ${PYTORCH_QNNPACK_X86_SSE2_UKERNELS} APPEND_STRING PROPERTY COMPILE_FLAGS " -O2 -msse2 ")
+endif()
+if(PYTORCH_QNNPACK_TARGET_PROCESSOR STREQUAL "riscv64")
+  set_property(SOURCE ${PYTORCH_QNNPACK_RISCV_SCALAR_UKERNELS} APPEND_STRING PROPERTY COMPILE_FLAGS " -O3 ")
 endif()
 if(CMAKE_SYSTEM_PROCESSOR MATCHES "^armv[5-8]" OR IOS_ARCH MATCHES "^armv7")
   set_property(SOURCE ${PYTORCH_QNNPACK_PSIMD_UKERNELS} APPEND_STRING PROPERTY COMPILE_FLAGS " -O2 -marm -mfpu=neon ")
