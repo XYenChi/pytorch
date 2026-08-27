@@ -374,17 +374,28 @@ void convolution_depthwise3x3_winograd_impl(
   winograd_f2k3_input_transform_inplace__rvv(                                  \
       &input_tile);                                                            \
                                                                                \
-  for (const auto row : c10::irange(4)) {                                      \
-    vfloat32m1_t input_mul_kernel =                                            \
-         __riscv_vfmul_vv_f32m1(                                               \
-           __riscv_vle32_v_f32m1((float*)&input_tile + row * 4, 4),            \
-           __riscv_vle32_v_f32m1((float*)&kernel_tile + row * 4, 4),           \
-           4);                                                                 \
-    __riscv_vse32_v_f32m1(                                                     \
-      (float*)&input_tile + row * 4,                                           \
-      input_mul_kernel,                                                        \
-      4);                                                                      \
-  }                                                                            \
+    vfloat32m1x4_t tmp_input_tile;                                                \
+    tmp_input_tile = __riscv_vset_v_f32m1_f32m1x4(                                \
+      tmp_input_tile, 0,                                                       \
+      __riscv_vfmul_vv_f32m1(                                                   \
+        __riscv_vle32_v_f32m1((float*)&input_tile + 0 * 4, 4),               \
+        __riscv_vle32_v_f32m1((float*)&kernel_tile + 0 * 4, 4), 4));          \
+    tmp_input_tile = __riscv_vset_v_f32m1_f32m1x4(                                \
+      tmp_input_tile, 1,                                                       \
+      __riscv_vfmul_vv_f32m1(                                                   \
+        __riscv_vle32_v_f32m1((float*)&input_tile + 1 * 4, 4),               \
+        __riscv_vle32_v_f32m1((float*)&kernel_tile + 1 * 4, 4), 4));          \
+    tmp_input_tile = __riscv_vset_v_f32m1_f32m1x4(                                \
+      tmp_input_tile, 2,                                                       \
+      __riscv_vfmul_vv_f32m1(                                                   \
+        __riscv_vle32_v_f32m1((float*)&input_tile + 2 * 4, 4),               \
+        __riscv_vle32_v_f32m1((float*)&kernel_tile + 2 * 4, 4), 4));          \
+    tmp_input_tile = __riscv_vset_v_f32m1_f32m1x4(                                \
+      tmp_input_tile, 3,                                                       \
+      __riscv_vfmul_vv_f32m1(                                                   \
+        __riscv_vle32_v_f32m1((float*)&input_tile + 3 * 4, 4),               \
+        __riscv_vle32_v_f32m1((float*)&kernel_tile + 3 * 4, 4), 4));          \
+    input_tile = tmp_input_tile;                                                  \
                                                                                \
   vfloat32m1_t val = __riscv_vget_v_f32m1x4_f32m1(input_tile, 1);              \
   vfloat32m1_t val_add_vbias =  __riscv_vfadd_vv_f32m1(val, vbias, 4);         \
