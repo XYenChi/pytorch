@@ -33,8 +33,67 @@ inline namespace CPU_CAPABILITY {
 
 using namespace vec;
 
+// RVV fast exponential approximation using Taylor series
+// For x in [-8, 8], exp(x) ≈ 2^(x/ln(2))
+static inline vfloat32m2_t rvv_fast_exp_f32m2(vfloat32m2_t x, size_t vl) {
+  // Constants for exp approximation
+  const float ln2_inv = 1.44269504089f;  // 1/ln(2)
+  const float ln2 = 0.693147180559f;
+  
+  // Clamp x to [-87, 88] to avoid overflow
+  vfloat32m2_t max_val = __riscv_vfmv_v_f_f32m2(88.0f, vl);
+  vfloat32m2_t min_val = __riscv_vfmv_v_f_f32m2(-87.0f, vl);
+  x = __riscv_vfmin_vv_f32m2(x, max_val, vl);
+  x = __riscv_vfmax_vv_f32m2(x, min_val, vl);
+  
+  // exp(x) = 2^(x * ln2_inv) ≈ 1 + x + x^2/2 + x^3/6 + x^4/24 + ...
+  vfloat32m2_t x2 = __riscv_vfmul_vv_f32m2(x, x, vl);
+  vfloat32m2_t x3 = __riscv_vfmul_vv_f32m2(x2, x, vl);
+  vfloat32m2_t x4 = __riscv_vfmul_vv_f32m2(x2, x2, vl);
+  
+  vfloat32m2_t one = __riscv_vfmv_v_f_f32m2(1.0f, vl);
+  vfloat32m2_t half = __riscv_vfmv_v_f_f32m2(0.5f, vl);
+  vfloat32m2_t one_sixth = __riscv_vfmv_v_f_f32m2(1.0f/6.0f, vl);
+  vfloat32m2_t one_24 = __riscv_vfmv_v_f_f32m2(1.0f/24.0f, vl);
+  vfloat32m2_t one_120 = __riscv_vfmv_v_f_f32m2(1.0f/120.0f, vl);
+  
+  vfloat32m2_t result = one;
+  result = __riscv_vfadd_vv_f32m2(result, x, vl);
+  result = __riscv_vfadd_vv_f32m2(result, __riscv_vfmul_vv_f32m2(x2, half, vl), vl);
+  result = __riscv_vfadd_vv_f32m2(result, __riscv_vfmul_vv_f32m2(x3, one_sixth, vl), vl);
+  result = __riscv_vfadd_vv_f32m2(result, __riscv_vfmul_vv_f32m2(x4, one_24, vl), vl);
+  result = __riscv_vfadd_vv_f32m2(result, __riscv_vfmul_vv_f32m2(x4, __riscv_vfmul_vv_f32m2(x, one_120, vl), vl), vl);
+  
+  return result;
+}
+
 static void sigmoid_kernel(TensorIteratorBase& iter) {
   const auto dtype = iter.common_dtype();
+  
+#if defined(__riscv_v_intrinsic) && __riscv_v_intrinsic >= 12000
+  // RVV-optimized sigmoid for float32 on contiguous tensors
+  if (dtype == at::kFloat && iter.is_contiguous()) {
+    float* out_ptr = static_cast<float*>(iter.data_ptr(0));
+    const float* in_ptr = static_cast<const float*>(iter.data_ptr(1));
+    int64_t n = iter.numel();
+    
+    int64_t i = 0;
+    while (i < n) {
+      size_t vl = __riscv_vsetvl_e32m2(n - i);
+      vfloat32m2_t x = __riscv_vle32_v_f32m2(&in_ptr[i], vl);
+      vfloat32m2_t neg_x = __riscv_vfneg_v_f32m2(x, vl);
+      vfloat32m2_t exp_neg_x = rvv_fast_exp_f32m2(neg_x, vl);
+      vfloat32m2_t one = __riscv_vfmv_v_f_f32m2(1.0f, vl);
+      vfloat32m2_t one_plus_exp = __riscv_vfadd_vv_f32m2(one, exp_neg_x, vl);
+      vfloat32m2_t result = __riscv_vfrdiv_vf_f32m2(one_plus_exp, 1.0f, vl);
+      __riscv_vse32_v_f32m2(&out_ptr[i], result, vl);
+      i += vl;
+    }
+    return;
+  }
+#endif
+
+  // Standard path using cpu_kernel_vec
   if (at::isReducedFloatingType(dtype)) {
     AT_DISPATCH_REDUCED_FLOATING_TYPES(dtype, "sigmoid_cpu_reduced_float", [&]() {
       cpu_kernel_vec(
