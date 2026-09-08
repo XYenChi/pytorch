@@ -3880,6 +3880,31 @@ class TestConvolutionNNDeviceType(NNTestCase):
                 nn.ConvTranspose2d, n, c, h, w, k, filter_size, device
             )
 
+    @onlyCPU
+    @dtypes(torch.float)
+    @parametrize_test("shape", [(1, 1, 3, 3), (2, 3, 7, 9), (1, 8, 16, 16)])
+    @parametrize_test("padding", [0, 1, 2])
+    @parametrize_test("has_bias", [False, True])
+    @parametrize_test("multiplier", [1, 2])
+    def test_depthwise3x3_inference_reference(
+        self, device, dtype, shape, padding, has_bias, multiplier
+    ):
+        channels = shape[1]
+        x = torch.randn(shape, device=device, dtype=dtype)
+        weight = torch.randn(channels * multiplier, 1, 3, 3, device=device, dtype=dtype)
+        bias = None
+        if has_bias:
+            bias = torch.randn(channels * multiplier, device=device, dtype=dtype)
+        actual = F.conv2d(x, weight, bias, padding=padding, groups=channels)
+        expected = F.conv2d(
+            x.double(),
+            weight.double(),
+            None if bias is None else bias.double(),
+            padding=padding,
+            groups=channels,
+        )
+        self.assertEqual(actual.double(), expected, atol=2e-5, rtol=2e-5)
+
     # Test that faster algorithms used for inference produce the same results
     # Validates depthwise3x3 bug reported in https://github.com/pytorch/pytorch/issues/60176
     @onlyCPU

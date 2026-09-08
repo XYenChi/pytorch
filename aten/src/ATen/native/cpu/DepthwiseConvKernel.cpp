@@ -328,10 +328,19 @@ inline void winograd_f2k3_kernel_transform__rvv(
   *transform = tmp_transform;
 }
 
-inline vfloat32m1x4_t v4f_transpose4x4__rvv(const vfloat32m1x4_t m) {
-  vfloat32m1x4_t ret;
-  __riscv_vsseg4e32_v_f32m1x4((float*)(&ret), m, 4);
+inline vfloat32m1x4_t v4f_load4x4__rvv(const float* data, int64_t stride) {
+  auto ret = __riscv_vundefined_f32m1x4();
+  ret = __riscv_vset_v_f32m1_f32m1x4(ret, 0, __riscv_vle32_v_f32m1(data, 4));
+  ret = __riscv_vset_v_f32m1_f32m1x4(ret, 1, __riscv_vle32_v_f32m1(data + stride, 4));
+  ret = __riscv_vset_v_f32m1_f32m1x4(ret, 2, __riscv_vle32_v_f32m1(data + 2 * stride, 4));
+  ret = __riscv_vset_v_f32m1_f32m1x4(ret, 3, __riscv_vle32_v_f32m1(data + 3 * stride, 4));
   return ret;
+}
+
+inline vfloat32m1x4_t v4f_transpose4x4__rvv(const vfloat32m1x4_t m) {
+  float transposed[16];
+  __riscv_vsseg4e32_v_f32m1x4(transposed, m, 4);
+  return v4f_load4x4__rvv(transposed, 4);
 }
 
 void convolution_depthwise3x3_winograd_impl(
@@ -374,17 +383,22 @@ void convolution_depthwise3x3_winograd_impl(
   winograd_f2k3_input_transform_inplace__rvv(                                  \
       &input_tile);                                                            \
                                                                                \
-  for (const auto row : c10::irange(4)) {                                      \
-    vfloat32m1_t input_mul_kernel =                                            \
-         __riscv_vfmul_vv_f32m1(                                               \
-           __riscv_vle32_v_f32m1((float*)&input_tile + row * 4, 4),            \
-           __riscv_vle32_v_f32m1((float*)&kernel_tile + row * 4, 4),           \
-           4);                                                                 \
-    __riscv_vse32_v_f32m1(                                                     \
-      (float*)&input_tile + row * 4,                                           \
-      input_mul_kernel,                                                        \
-      4);                                                                      \
-  }                                                                            \
+  const auto m0 = __riscv_vfmul_vv_f32m1(                                      \
+      __riscv_vget_v_f32m1x4_f32m1(input_tile, 0),                             \
+      __riscv_vget_v_f32m1x4_f32m1(kernel_tile, 0), 4);                        \
+  const auto m1 = __riscv_vfmul_vv_f32m1(                                      \
+      __riscv_vget_v_f32m1x4_f32m1(input_tile, 1),                             \
+      __riscv_vget_v_f32m1x4_f32m1(kernel_tile, 1), 4);                        \
+  const auto m2 = __riscv_vfmul_vv_f32m1(                                      \
+      __riscv_vget_v_f32m1x4_f32m1(input_tile, 2),                             \
+      __riscv_vget_v_f32m1x4_f32m1(kernel_tile, 2), 4);                        \
+  const auto m3 = __riscv_vfmul_vv_f32m1(                                      \
+      __riscv_vget_v_f32m1x4_f32m1(input_tile, 3),                             \
+      __riscv_vget_v_f32m1x4_f32m1(kernel_tile, 3), 4);                        \
+  input_tile = __riscv_vset_v_f32m1_f32m1x4(input_tile, 0, m0);               \
+  input_tile = __riscv_vset_v_f32m1_f32m1x4(input_tile, 1, m1);               \
+  input_tile = __riscv_vset_v_f32m1_f32m1x4(input_tile, 2, m2);               \
+  input_tile = __riscv_vset_v_f32m1_f32m1x4(input_tile, 3, m3);               \
                                                                                \
   vfloat32m1_t val = __riscv_vget_v_f32m1x4_f32m1(input_tile, 1);              \
   vfloat32m1_t val_add_vbias =  __riscv_vfadd_vv_f32m1(val, vbias, 4);         \
@@ -410,22 +424,17 @@ void convolution_depthwise3x3_winograd_impl(
                   iw + 3 < args.in_cols && 2 * oth + 1 < args.out_rows &&
                   2 * otw + 1 < args.out_cols
               )) {
-        vfloat32m1x4_t input_tile;
-        for (const auto row : c10::irange(4)) {
-          __riscv_vse32_v_f32m1(
-            (float*)&input_tile + row * 4,
-            __riscv_vle32_v_f32m1(input + (ih + row) * args.in_cols + iw, 4),
-            4);
-        }
+        auto input_tile = v4f_load4x4__rvv(
+            input + ih * args.in_cols + iw, args.in_cols);
 
         TILE;
 
-        for (const auto row : c10::irange(2)) {
-          __riscv_vse32_v_f32m1(
-              output + (oth * 2 + row) * args.out_cols + otw * 2,
-              __riscv_vle32_v_f32m1((float*)&input_tile + row * 4, 2),
-              2);
-        }
+        auto* output_tile = output + oth * 2 * args.out_cols + otw * 2;
+        __riscv_vse32_v_f32m1(
+            output_tile, __riscv_vget_v_f32m1x4_f32m1(input_tile, 0), 2);
+        __riscv_vse32_v_f32m1(
+            output_tile + args.out_cols,
+            __riscv_vget_v_f32m1x4_f32m1(input_tile, 1), 2);
       } else {
         float block[4][4];
         for (const auto row : c10::irange(4)) {
@@ -439,23 +448,15 @@ void convolution_depthwise3x3_winograd_impl(
           }
         }
 
-        vfloat32m1x4_t input_tile;
-        for (const auto row : c10::irange(4)) {
-          __riscv_vse32_v_f32m1(
-            (float*)&input_tile + row * 4,
-            __riscv_vle32_v_f32m1(&block[row][0], 4),
-            4);
-        }
+        auto input_tile = v4f_load4x4__rvv(&block[0][0], 4);
 
         TILE;
 
         float oblock[2][2];
-        for (const auto row : c10::irange(2)) {
-          __riscv_vse32_v_f32m1(
-            &oblock[row][0],
-            __riscv_vle32_v_f32m1((float*)&input_tile + row * 4, 2),
-            2);
-        }
+        __riscv_vse32_v_f32m1(
+            &oblock[0][0], __riscv_vget_v_f32m1x4_f32m1(input_tile, 0), 2);
+        __riscv_vse32_v_f32m1(
+            &oblock[1][0], __riscv_vget_v_f32m1x4_f32m1(input_tile, 1), 2);
         for (const auto row : c10::irange(2)) {
           for (const auto col : c10::irange(2)) {
             if (2 * oth + row < args.out_rows &&
