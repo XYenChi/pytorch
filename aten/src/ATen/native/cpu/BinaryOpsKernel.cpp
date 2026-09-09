@@ -125,6 +125,17 @@ void atan2_kernel(TensorIteratorBase& iter) {
 
 void mul_kernel(TensorIteratorBase& iter) {
   auto dtype = iter.common_dtype();
+#if defined(CPU_CAPABILITY_RVV)
+  if (dtype == kFloat && iter.ndim() > 0 &&
+      iter.strides(0)[0] == sizeof(float) &&
+      (iter.strides(1)[0] == 0 || iter.strides(1)[0] == sizeof(float)) &&
+      (iter.strides(2)[0] == 0 || iter.strides(2)[0] == sizeof(float)) &&
+      (iter.strides(1)[0] == sizeof(float) ||
+       iter.strides(2)[0] == sizeof(float))) {
+    cpu_kernel(iter, [](float a, float b) { return a * b; });
+    return;
+  }
+#endif
   if (dtype == ScalarType::Bool) {
     cpu_kernel(iter, [=](bool a, bool b) -> bool { return a && b; });
   } else if (dtype == kComplexHalf) {
