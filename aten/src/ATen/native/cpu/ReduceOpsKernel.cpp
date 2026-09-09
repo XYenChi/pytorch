@@ -1,6 +1,12 @@
 #define TORCH_ASSERT_ONLY_METHOD_OPERATORS
 #include <algorithm>
+#include <array>
 #include <bit>
+#include <cstdint>
+
+#if defined(CPU_CAPABILITY_RVV) && defined(__riscv_v_intrinsic) && __riscv_v_intrinsic >= 12000
+#include <riscv_vector.h>
+#endif
 
 #include <ATen/core/Tensor.h>
 #include <ATen/Dispatch.h>
@@ -204,6 +210,50 @@ void norm_kernel_cpu_impl(TensorIterator& iter, const double& val) {
   }
 }
 
+#if defined(CPU_CAPABILITY_RVV) && defined(__riscv_v_intrinsic) && __riscv_v_intrinsic >= 12000
+#if defined(__GNUC__) && !defined(__clang__)
+__attribute__((optimize("fp-contract=off")))
+#endif
+void norm_two_rvv_row(char* output, char* input, int64_t size) {
+  constexpr int64_t lanes = Vectorized<float>::size();
+  const size_t vl = lanes;
+  const auto* data = reinterpret_cast<const float*>(input);
+  auto acc = __riscv_vfmv_v_f_f32m2(0.0f, vl);
+  auto acc1 = __riscv_vfmv_v_f_f32m2(0.0f, vl);
+  auto acc2 = __riscv_vfmv_v_f_f32m2(0.0f, vl);
+  auto acc3 = __riscv_vfmv_v_f_f32m2(0.0f, vl);
+  int64_t d = 0;
+  for (; d < size - size % (4 * lanes); d += 4 * lanes) {
+    const auto x0 = __riscv_vle32_v_f32m2(data + d, vl);
+    const auto x1 = __riscv_vle32_v_f32m2(data + d + lanes, vl);
+    const auto x2 = __riscv_vle32_v_f32m2(data + d + 2 * lanes, vl);
+    const auto x3 = __riscv_vle32_v_f32m2(data + d + 3 * lanes, vl);
+    acc = __riscv_vfadd_vv_f32m2(acc, __riscv_vfmul_vv_f32m2(x0, x0, vl), vl);
+    acc1 = __riscv_vfadd_vv_f32m2(acc1, __riscv_vfmul_vv_f32m2(x1, x1, vl), vl);
+    acc2 = __riscv_vfadd_vv_f32m2(acc2, __riscv_vfmul_vv_f32m2(x2, x2, vl), vl);
+    acc3 = __riscv_vfadd_vv_f32m2(acc3, __riscv_vfmul_vv_f32m2(x3, x3, vl), vl);
+  }
+  acc = __riscv_vfadd_vv_f32m2(acc, acc1, vl);
+  acc = __riscv_vfadd_vv_f32m2(acc, acc2, vl);
+  acc = __riscv_vfadd_vv_f32m2(acc, acc3, vl);
+  for (; d < size - size % lanes; d += lanes) {
+    const auto values = __riscv_vle32_v_f32m2(data + d, vl);
+    const auto squares = __riscv_vfmul_vv_f32m2(values, values, vl);
+    acc = __riscv_vfadd_vv_f32m2(acc, squares, vl);
+  }
+  std::array<float, lanes> buffer;
+  __riscv_vse32_v_f32m2(buffer.data(), acc, vl);
+  for (int64_t j = 1; j < lanes; ++j) {
+    buffer[0] += buffer[j];
+  }
+  for (; d < size; ++d) {
+    const float value = data[d];
+    buffer[0] += value * value;
+  }
+  *reinterpret_cast<float*>(output) = std::sqrt(buffer[0]);
+}
+#endif
+
 void norm_kernel_tensor_iterator_impl(
     TensorIterator& iter,
     const Scalar& p) {
@@ -224,6 +274,16 @@ void norm_kernel_tensor_iterator_impl(
       iter.dtype(0) == iter.input_dtype() &&
       (iter.input_dtype() == kFloat || iter.input_dtype() == kDouble ||
        iter.input_dtype() == kBFloat16)) {
+#if defined(CPU_CAPABILITY_RVV) && defined(__riscv_v_intrinsic) && __riscv_v_intrinsic >= 12000
+    constexpr size_t vl = Vectorized<float>::size();
+    if (iter.input_dtype() == kFloat &&
+        reinterpret_cast<uintptr_t>(iter.data_ptr(1)) % alignof(float) == 0 &&
+        reinterpret_cast<uintptr_t>(iter.data_ptr(0)) % alignof(float) == 0 &&
+        __riscv_vsetvl_e32m2(vl) == vl) {
+      binary_kernel_reduce_lastdim(iter, norm_two_rvv_row);
+      return;
+    }
+#endif
     // If we can vectorize over the last dimension and the dtype
     // of the output is the same as that of the input,
     // then we go through the vectorised path.

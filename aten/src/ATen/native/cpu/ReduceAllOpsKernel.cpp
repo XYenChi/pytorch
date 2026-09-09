@@ -6,10 +6,8 @@
 
 #include <ATen/Dispatch.h>
 #include <ATen/Parallel.h>
-#include <ATen/TensorIterator.h>
 #include <ATen/OpMathType.h>
 
-#include <ATen/native/cpu/Loops.h>
 #include <ATen/native/cpu/zmath.h>
 #include <ATen/cpu/vec/functional.h>
 #include <ATen/cpu/vec/vec.h>
@@ -62,16 +60,21 @@ inline void reduce_all_impl(
   output.fill_(result);
 }
 
+template <bool is_min>
+bool reduce_all_bool(const Tensor& input) {
+  const auto* data =
+      reinterpret_cast<const unsigned char*>(input.const_data_ptr<bool>());
+  unsigned char result = is_min;
+  // Byte min/max permits vectorization and treats nonzero bytes as true.
+  for (const auto i : c10::irange(input.numel())) {
+    result = is_min ? std::min(result, data[i]) : std::max(result, data[i]);
+  }
+  return result != 0;
+}
+
 void min_all_kernel_impl(Tensor& result, const Tensor& input) {
   if (input.scalar_type() == ScalarType::Bool) {
-    TensorIterator iter = TensorIteratorConfig()
-      .add_input(input)
-      .build();
-    bool result_data  = true;
-    cpu_serial_kernel(iter, [&](const bool a) -> void {
-      result_data = result_data && a;
-    });
-    result.fill_(result_data);
+    result.fill_(reduce_all_bool<true>(input));
   } else if(input.scalar_type() == ScalarType::Long) {
     // for int64_t, vectorized implementation have performance issue,
     // just use scalar path
@@ -89,14 +92,7 @@ void min_all_kernel_impl(Tensor& result, const Tensor& input) {
 
 void max_all_kernel_impl(Tensor& result, const Tensor& input) {
   if (input.scalar_type() == ScalarType::Bool) {
-    TensorIterator iter = TensorIteratorConfig()
-      .add_input(input)
-      .build();
-    bool result_data  = false;
-    cpu_serial_kernel(iter, [&](const bool a) -> void {
-      result_data = result_data || a;
-    });
-    result.fill_(result_data);
+    result.fill_(reduce_all_bool<false>(input));
   } else if (input.scalar_type() == ScalarType::Long) {
     // for int64_t, vectorized implementation have performance issue,
     // just use scalar path
@@ -172,17 +168,16 @@ void aminmax_allreduce_kernel(
     Tensor& min_result,
     Tensor& max_result) {
   if (input.scalar_type() == ScalarType::Bool) {
-    TensorIterator iter = TensorIteratorConfig()
-      .add_input(input)
-      .build();
-    bool min_result_data = true;
-    bool max_result_data = false;
-    cpu_serial_kernel(iter, [&](const bool a) -> void {
-      min_result_data = min_result_data && a;
-      max_result_data = max_result_data || a;
-    });
-    min_result.fill_(min_result_data);
-    max_result.fill_(max_result_data);
+    const auto* data =
+        reinterpret_cast<const unsigned char*>(input.const_data_ptr<bool>());
+    unsigned char min_value = 1;
+    unsigned char max_value = 0;
+    for (const auto i : c10::irange(input.numel())) {
+      min_value = std::min(min_value, data[i]);
+      max_value = std::max(max_value, data[i]);
+    }
+    min_result.fill_(min_value != 0);
+    max_result.fill_(max_value != 0);
   } else if (input.scalar_type() == ScalarType::Long) {
     // for int64_t, vectorized implementation have performance issue,
     // just use scalar path

@@ -101,6 +101,68 @@ def _reduced_shape(shape, empty_dim_as_none=False, dim=None, keepdim=False):
     return result
 
 class TestReductions(TestCase):
+    @onlyCPU
+    @dtypes(torch.float32)
+    @parametrize("shape", [(1, 7), (3, 9), (3, 33), (64, 2048), (1, 65536)])
+    @parametrize("layout", ["contiguous", "rowstrided", "innerstrided"])
+    @parametrize("pattern", ["zeros", "random", "dynamicrange", "nan", "inf"])
+    def test_norm_rvv_values(self, device, dtype, shape, layout, pattern):
+        outer, length = shape
+        if layout == "rowstrided":
+            x = torch.empty((outer * 2, length + 1), dtype=dtype, device=device)[::2, :length]
+        elif layout == "innerstrided":
+            x = torch.empty((outer, length * 2), dtype=dtype, device=device)[:, ::2]
+        else:
+            x = torch.empty(shape, dtype=dtype, device=device)
+        x.normal_()
+        if pattern == "zeros":
+            x.zero_()
+        elif pattern == "dynamicrange":
+            x *= torch.logspace(-4, 4, length, dtype=dtype, device=device)
+        elif pattern == "nan":
+            x[0, 0] = float("nan")
+        elif pattern == "inf":
+            x[0, 0] = float("inf")
+            x[-1, -1] = -float("inf")
+        expected = torch.linalg.vector_norm(x.double(), 2, dim=-1).to(dtype)
+        actual = torch.linalg.vector_norm(x, 2, dim=-1)
+        self.assertEqual(actual, expected, rtol=1e-4, atol=1e-6)
+        out = torch.empty((outer * 2, 1), dtype=dtype, device=device)[::2]
+        actual = torch.linalg.vector_norm(x, 2, dim=-1, keepdim=True, out=out)
+        self.assertIs(actual, out)
+        self.assertEqual(actual, expected.unsqueeze(-1), rtol=1e-4, atol=1e-6)
+
+    @onlyCPU
+    @dtypes(torch.float32)
+    @parametrize("misaligned_input", [False, True])
+    @parametrize("misaligned_output", [False, True])
+    def test_norm_rvv_misaligned(self, device, dtype, misaligned_input, misaligned_output):
+        if misaligned_input:
+            storage = bytearray(3 * 33 * 4 + 1)
+            x = torch.frombuffer(storage, dtype=dtype, offset=1).reshape(3, 33)
+            x.normal_()
+        else:
+            x = torch.randn((3, 33), dtype=dtype, device=device)
+        if misaligned_output:
+            output_storage = bytearray(3 * 4 + 1)
+            out = torch.frombuffer(output_storage, dtype=dtype, offset=1)
+        else:
+            out = torch.empty(3, dtype=dtype, device=device)
+        expected = torch.linalg.vector_norm(x.double(), 2, dim=-1).to(dtype)
+        actual = torch.linalg.vector_norm(x, 2, dim=-1, out=out)
+        self.assertIs(actual, out)
+        self.assertEqual(actual, expected, rtol=1e-5, atol=1e-6)
+
+    @onlyCPU
+    @dtypes(torch.float32)
+    @parametrize("length", [9, 33, 256])
+    @parametrize("value, expected", [(1e-30, 0.0), (1e19, float("inf")), (1e30, float("inf"))])
+    def test_norm_rvv_overflow_underflow(self, device, dtype, length, value, expected):
+        x = torch.full((3, length), value, dtype=dtype, device=device)
+        expected = torch.full((3,), expected, dtype=dtype, device=device)
+        actual = torch.linalg.vector_norm(x, 2, dim=-1)
+        self.assertEqual(actual, expected, rtol=0, atol=0)
+
     ###########################################################################
     # ReductionOpInfo unit tests
     ###########################################################################
@@ -1206,6 +1268,95 @@ class TestReductions(TestCase):
 
         self._test_minmax_helper(_amin_wrapper, np.amin, device, dtype)
         self._test_minmax_helper(_amax_wrapper, np.amax, device, dtype)
+
+    @onlyCPU
+    @parametrize("op", ["min", "max"])
+    @parametrize("size", [1, 15, 16, 17, 31, 32, 33, 127, 128, 129, 65537])
+    @parametrize("strided", [False, True])
+    @parametrize("pattern", ["zeros", "ones", "first", "last", "random"])
+    def test_min_max_bool(self, device, op, size, strided, pattern):
+        x = torch.randint(0, 2, (size * 2,), dtype=torch.bool, device=device)
+        x = x[::2] if strided else x[:size]
+        if pattern in ("zeros", "ones"):
+            x.fill_(pattern == "ones")
+        elif pattern in ("first", "last"):
+            x.fill_(op == "min")
+            x[0 if pattern == "first" else -1] = op != "min"
+        values = x.tolist()
+        expected = min(values) if op == "min" else max(values)
+        fn = getattr(torch, op)
+        self.assertEqual(fn(x), torch.tensor(expected, device=device))
+        out = torch.empty((), dtype=torch.int64, device=device)
+        self.assertIs(fn(x, out=out), out)
+        self.assertEqual(out.item(), int(expected))
+        self.assertEqual(fn(x, out=x[0]), torch.tensor(expected, device=device))
+
+    @onlyCPU
+    @parametrize("byte", [2, 127, 128, 255])
+    @parametrize("zero", [False, True])
+    def test_min_max_bool_noncanonical(self, device, byte, zero):
+        x = torch.full((33,), byte, dtype=torch.uint8, device=device).view(torch.bool)
+        if zero:
+            x[-1] = False
+        self.assertEqual(torch.min(x), torch.tensor(not zero, device=device))
+        self.assertEqual(torch.max(x), torch.tensor(True, device=device))
+
+    @onlyCPU
+    @parametrize("size", [1, 15, 16, 17, 31, 32, 33, 127, 128, 129, 65537])
+    @parametrize("strided", [False, True])
+    @parametrize("pattern", ["zeros", "ones", "first", "last", "random"])
+    @parametrize("keepdim", [False, True])
+    def test_aminmax_bool(self, device, size, strided, pattern, keepdim):
+        x = torch.randint(0, 2, (size * 2,), dtype=torch.bool, device=device)
+        x = x[::2] if strided else x[:size]
+        if pattern != "random":
+            x.fill_(pattern == "ones")
+            if pattern in ("first", "last"):
+                x[0 if pattern == "first" else -1] = True
+        x = x.unsqueeze(0)
+        values = x.flatten().tolist()
+        shape = (1, 1) if keepdim else ()
+        expected = tuple(
+            torch.tensor(value, device=device).reshape(shape)
+            for value in (all(values), any(values))
+        )
+        self.assertEqual(tuple(torch.aminmax(x, keepdim=keepdim)), expected)
+        out = tuple(torch.empty_like(value) for value in expected)
+        actual = torch.aminmax(x, keepdim=keepdim, out=out)
+        self.assertIs(actual.min, out[0])
+        self.assertIs(actual.max, out[1])
+        self.assertEqual(tuple(actual), expected)
+        ends = (-1, 0) if pattern == "last" else (0, -1)
+        out = tuple(x[0, i].view(shape) for i in ends)
+        actual = torch.aminmax(x, keepdim=keepdim, out=out)
+        self.assertIs(actual.min, out[0])
+        self.assertIs(actual.max, out[1])
+        self.assertEqual(tuple(actual), expected)
+
+    @onlyCPU
+    @parametrize("size", [33, 65537])
+    @parametrize("strided", [False, True])
+    @parametrize("byte", [2, 127, 128, 255, "mixed"])
+    @parametrize("zero", ["none", "first", "last"])
+    @parametrize("keepdim", [False, True])
+    def test_aminmax_bool_storage(self, device, size, strided, byte, zero, keepdim):
+        storage = torch.empty((size * 2,), dtype=torch.uint8, device=device)
+        storage = storage[::2] if strided else storage[:size]
+        if byte == "mixed":
+            pattern = torch.tensor([2, 127, 128, 255], dtype=torch.uint8, device=device)
+            storage.copy_(pattern.repeat((size + 3) // 4)[:size])
+        else:
+            storage.fill_(byte)
+        x = storage.view(torch.bool)
+        if zero != "none":
+            x[0 if zero == "first" else -1] = False
+        shape = (1, 1) if keepdim else ()
+        expected = tuple(
+            torch.tensor(value, device=device).reshape(shape)
+            for value in (zero == "none", True)
+        )
+        actual = torch.aminmax(x.unsqueeze(0), keepdim=keepdim)
+        self.assertEqual(tuple(actual), expected)
 
     @onlyNativeDeviceTypes
     @dtypes(*complex_types())
