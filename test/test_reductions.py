@@ -1859,6 +1859,63 @@ class TestReductions(TestCase):
         self._test_reduction_function_with_numpy(torch.count_nonzero, np.count_nonzero, device, dtype)
         self._test_reduction_function_with_numpy(torch.count_nonzero, np.count_nonzero, device, dtype, True)
 
+    def _count_nonzero_float32_input(self, device, shape):
+        patterns = [1, 0x80000001, 0, 0x80000000,
+                    0x7FC00001, 0x7F800001, 0x7F800000, 0xFF800000]
+        bits = [patterns[i % len(patterns)] for i in range(math.prod(shape))]
+        values = [value if value < 2**31 else value - 2**32 for value in bits]
+        x = torch.tensor(values, dtype=torch.int32, device=device).view(torch.float32).reshape(shape)
+        length = shape[-1]
+        counts = [sum((bits[i] & 0x7FFFFFFF) != 0 for i in range(row * length, (row + 1) * length))
+                  for row in range(math.prod(shape[:-1]))]
+        expected = torch.tensor(counts, dtype=torch.int64, device=device).reshape(shape[:-1])
+        return x, expected
+
+    @onlyCPU
+    @parametrize("shape", [(0,), (0, 0), (0, 17), (3, 0),
+                          (1, 1), (1, 2), (1, 3), (1, 4), (1, 5),
+                          (3, 7), (3, 8), (3, 9), (3, 31), (3, 32), (3, 33), (33,)])
+    def test_count_nonzero_float32_lastdim(self, device, shape):
+        x, expected = self._count_nonzero_float32_input(device, shape)
+        self.assertEqual(torch.count_nonzero(x, dim=-1), expected)
+        self.assertEqual(torch.count_nonzero(x, dim=[x.ndim - 1]), expected)
+
+    @onlyCPU
+    @serialTest()
+    @parametrize("length", [32767, 32768, 32769])
+    @parametrize("outer", [1, 4])
+    @parametrize("threads", [1, 4])
+    def test_count_nonzero_float32_parallel(self, device, length, outer, threads):
+        x, expected = self._count_nonzero_float32_input(device, (outer, length))
+        previous_threads = torch.get_num_threads()
+        try:
+            torch.set_num_threads(threads)
+            self.assertEqual(torch.count_nonzero(x, dim=-1), expected)
+        finally:
+            torch.set_num_threads(previous_threads)
+
+    @onlyCPU
+    @parametrize("offset", [1, 2, 3])
+    def test_count_nonzero_float32_misaligned(self, device, offset):
+        original, expected = self._count_nonzero_float32_input(device, (3, 33))
+        storage = bytearray(original.numel() * 4 + offset)
+        bits = torch.frombuffer(storage, dtype=torch.int32, offset=offset).reshape(original.shape)
+        bits.copy_(original.view(torch.int32))
+        x = bits.view(torch.float32)
+        self.assertNotEqual(x.data_ptr() % 4, 0)
+        self.assertEqual(bits, original.view(torch.int32))
+        self.assertEqual(torch.count_nonzero(x, dim=-1), expected)
+
+    @onlyCPU
+    @parametrize("overload", ["out", "dim_IntList_out"])
+    def test_count_nonzero_float32_out(self, device, overload):
+        x, expected = self._count_nonzero_float32_input(device, (3, 33))
+        out = torch.empty(6, dtype=torch.int64, device=device)[::2]
+        dim = -1 if overload == "out" else [-1]
+        operation = getattr(torch.ops.aten.count_nonzero, overload)
+        self.assertIs(operation(x, dim, out=out), out)
+        self.assertEqual(out, expected)
+
     # TODO: Investigate why the output is not close to numpy.
     def _get_relaxed_tolerances_for(self, dtype):
         if dtype == torch.float16:

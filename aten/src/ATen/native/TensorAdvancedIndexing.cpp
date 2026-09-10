@@ -139,6 +139,7 @@
 #include <c10/util/irange.h>
 
 #include <algorithm>
+#include <cstdint>
 #include <numeric>
 #include <utility>
 #include <vector>
@@ -2833,7 +2834,70 @@ Tensor count_nonzero_cuda(const Tensor& self, IntArrayRef dims) {
   return reduce.sum(dims);
 }
 
+#if defined(__riscv_vector)
+static Tensor count_nonzero_lastdim_fused(const Tensor& self) {
+  auto sizes = self.sizes().vec();
+  sizes.pop_back();
+  auto out = at::empty(sizes, self.options().dtype(kLong));
+  const auto size = self.size(-1);
+  if (size == 0) {
+    return out.zero_();
+  }
+  const auto rows = out.numel();
+  if (rows == 0) {
+    return out;
+  }
+  const auto* data = self.const_data_ptr<float>();
+  auto* result = out.mutable_data_ptr<int64_t>();
+  auto count = [](const float* ptr, int64_t n) {
+    int64_t nonzero[4] = {0};
+    int64_t i = 0;
+    for (; i < n - 3; i += 4) {
+      nonzero[0] += ptr[i] != 0.0f;
+      nonzero[1] += ptr[i + 1] != 0.0f;
+      nonzero[2] += ptr[i + 2] != 0.0f;
+      nonzero[3] += ptr[i + 3] != 0.0f;
+    }
+    for (; i < n; ++i) {
+      nonzero[0] += ptr[i] != 0.0f;
+    }
+    return nonzero[0] + nonzero[1] + nonzero[2] + nonzero[3];
+  };
+  if (rows == 1) {
+    result[0] = at::parallel_reduce(
+        0,
+        size,
+        internal::GRAIN_SIZE,
+        int64_t{0},
+        [&](int64_t begin, int64_t end, int64_t ident) {
+          return ident + count(data + begin, end - begin);
+        },
+        [](int64_t a, int64_t b) { return a + b; });
+  } else {
+    const auto grain = std::max<int64_t>(1, internal::GRAIN_SIZE / size);
+    at::parallel_for(0, rows, grain, [&](int64_t begin, int64_t end) {
+      const float* ptr = data + begin * size;
+      for (int64_t row = begin; row < end; ++row) {
+        result[row] = count(ptr, size);
+        ptr += size;
+      }
+    });
+  }
+  return out;
+}
+
+#endif
+
 Tensor count_nonzero_cpu(const Tensor& self, IntArrayRef dims) {
+#if defined(__riscv_vector)
+  if (self.scalar_type() == kFloat && self.layout() == kStrided &&
+      self.dim() > 0 && self.is_contiguous() && dims.size() == 1 &&
+      (dims[0] == -1 || dims[0] == self.dim() - 1) &&
+      reinterpret_cast<uintptr_t>(self.const_data_ptr()) % alignof(float) ==
+          0) {
+    return count_nonzero_lastdim_fused(self);
+  }
+#endif
   if (!dims.empty()) {
     auto reduce = self;
     if (reduce.scalar_type() != kBool) {
