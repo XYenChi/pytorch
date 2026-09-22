@@ -50,6 +50,7 @@
 #include <ATen/ops/argmin_native.h>
 #include <ATen/ops/cat.h>
 #include <ATen/ops/complex.h>
+#include <ATen/ops/count_nonzero.h>
 #include <ATen/ops/cummax.h>
 #include <ATen/ops/cummax_native.h>
 #include <ATen/ops/cummaxmin_backward_native.h>
@@ -1302,6 +1303,13 @@ TORCH_IMPL_FUNC(sum_out)
 }
 
 Tensor sum(const Tensor &self, std::optional<ScalarType> dtype) {
+#if defined(__riscv_vector)
+  if (self.device().is_cpu() && self.layout() == kStrided && !self.is_nested() &&
+      self.scalar_type() == kBool && !self.is_neg() &&
+      (!dtype.has_value() || *dtype == kLong)) {
+    return at::count_nonzero(self, IntArrayRef{});
+  }
+#endif
   return at::sum(self, IntArrayRef{}, false, dtype);
 }
 

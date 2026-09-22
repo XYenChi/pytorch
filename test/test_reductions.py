@@ -1534,6 +1534,64 @@ class TestReductions(TestCase):
         else:
             check_sum_all(torch.tensor([True, False, True], dtype=torch.bool, device=device))
 
+    @onlyCPU
+    @parametrize("shape,layout", [
+        ((), "contiguous"), ((0,), "contiguous"), ((2, 0, 3), "contiguous"),
+        ((1,), "contiguous"), ((3,), "contiguous"), ((31,), "contiguous"),
+        ((33,), "contiguous"), ((65537,), "contiguous"),
+        ((65537,), "strided"), ((257, 257), "transpose"), ((257, 257), "expand"),
+    ])
+    def test_sum_bool_global_layouts(self, device, shape, layout):
+        if layout == "strided":
+            x = torch.ones(shape[0] * 2 + 2, dtype=torch.bool, device=device)[1:-1:2]
+            x[::3] = False
+        elif layout == "expand":
+            base = torch.ones(shape[-1], dtype=torch.bool, device=device)
+            base[::3] = False
+            x = base.expand(shape)
+        else:
+            x = torch.ones(shape, dtype=torch.bool, device=device)
+            x.reshape(-1)[::3] = False
+            if layout == "transpose":
+                x = x.t()
+        count = x.numel() - (x.numel() + 2) // 3
+        if layout == "expand":
+            count = shape[0] * (shape[1] - (shape[1] + 2) // 3)
+        expected = torch.tensor(count, dtype=torch.int64, device=device)
+        self.assertEqual(torch.sum(x), expected)
+        self.assertEqual(x.sum(dtype=torch.int64), expected)
+
+    @onlyCPU
+    @parametrize("shape", [(), (65537,)])
+    @parametrize("value", [False, True])
+    def test_sum_bool_global_uniform(self, device, shape, value):
+        x = torch.full(shape, value, dtype=torch.bool, device=device)
+        expected = torch.tensor(x.numel() if value else 0, dtype=torch.int64, device=device)
+        self.assertEqual(x.sum(), expected)
+        self.assertEqual(torch.sum(x, dtype=torch.int64), expected)
+
+    @onlyCPU
+    @parametrize("byte", [2, 128, 255])
+    def test_sum_bool_global_noncanonical(self, device, byte):
+        raw = torch.full((65537,), byte, dtype=torch.uint8, device=device)
+        raw[::3] = 0
+        x = raw.view(torch.bool)
+        expected = torch.tensor(65537 - (65537 + 2) // 3, dtype=torch.int64, device=device)
+        self.assertEqual(x.sum(), expected)
+        self.assertEqual(x.sum(dtype=torch.int64), expected)
+
+    @onlyCPU
+    @parametrize("alias", [False, True])
+    def test_sum_bool_global_out(self, device, alias):
+        raw = torch.ones(65536, dtype=torch.uint8, device=device)
+        raw[::3] = 0
+        x = raw.view(torch.bool)
+        out = raw.view(torch.int64)[0] if alias else torch.empty((), dtype=torch.int64, device=device)
+        expected = torch.tensor(65536 - (65536 + 2) // 3, dtype=torch.int64, device=device)
+        result = torch.ops.aten.sum.out(x, out=out)
+        self.assertIs(result, out)
+        self.assertEqual(result, expected)
+
     def _test_memory_format_transformations(self, device, input_generator_fn, transformation_fn,
                                             memory_format, compare_data=True, default_is_preserve=False):
 
