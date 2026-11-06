@@ -7527,6 +7527,20 @@ class TestLinalg(TestCase):
         with self.assertRaisesRegex(RuntimeError, "must be batches of square matrices"):
             torch.ops.aten.matrix_exp_backward(non_square, grad_non_square)
 
+    @dtypes(torch.float, torch.double, torch.complex64, torch.complex128)
+    @parametrize("value", [float("nan"), float("inf"), -float("inf")])
+    @parametrize("nonfinite_index", [0, 1, 3])
+    def test_linalg_matrix_exp_nonfinite(self, device, dtype, value, nonfinite_index):
+        diagonal = torch.tensor([1, 4, 16, 0], device=device, dtype=dtype)
+        diagonal = diagonal.unsqueeze(-1).expand(-1, 2)
+        x = torch.diag_embed(diagonal)
+        expected = torch.diag_embed(diagonal.exp())
+        x[nonfinite_index, 0, 0] = value
+        actual = torch.linalg.matrix_exp(x)
+        self.assertTrue(actual[nonfinite_index].isnan().any())
+        finite_indices = torch.arange(4, device=device) != nonfinite_index
+        self.assertEqual(actual[finite_indices], expected[finite_indices])
+
     @skipCPUIfNoLapack
     @dtypes(torch.float, torch.double, torch.complex64, torch.complex128)
     def test_linalg_matrix_exp_perverse_nan_values(self, device, dtype):

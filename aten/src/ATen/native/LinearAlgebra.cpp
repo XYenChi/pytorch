@@ -2629,7 +2629,9 @@ Tensor compute_T18_scale_square(
   // do the matrix multiplication by range.
   // With above example, `sorted_s` is [0, 1, 1, 4], we also will need the index
   // info, so we can use it to compose the result back.
-  auto [sorted_s, sorted_s_inds] = at::sort(s, /*dim=*/0);
+  // Avoid converting non-finite exponents to integer squaring counts.
+  // Keep the original exponents above to preserve non-finite propagation.
+  auto [sorted_s, sorted_s_inds] = at::sort(s.nan_to_num(0.0, 0.0, 0.0), /*dim=*/0);
   sorted_s = sorted_s.to(at::kLong);
   // Then we call `unique_consecutive` and we will use it to split `sorted_s`,
   // with above example, `split_counts` is [1, 2, 1].
